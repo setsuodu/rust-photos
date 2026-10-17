@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>照片</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; background: #1c1c1c; color: #fff;
+    font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif; user-select: none; }
+  #stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #stage img, #stage video { max-width: 100%; max-height: 100%; object-fit: contain; outline: none; }
+  #stage video { width: 100%; height: 100%; background: #000; }
+
+  .bar { position: absolute; left: 0; right: 0; padding: 10px 16px; display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(rgba(0,0,0,.65), transparent); transition: opacity .25s; z-index: 5; }
+  #top { top: 0; }
+  #name { font-size: 14px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #counter { font-size: 13px; opacity: .8; }
+  .btn { background: rgba(255,255,255,.1); border: 0; color: #fff; border-radius: 6px; padding: 6px 12px;
+    font: inherit; font-size: 13px; cursor: pointer; }
+  .btn:hover { background: rgba(255,255,255,.2); }
+
+  .nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 88px; border: 0; z-index: 5;
+    background: rgba(0,0,0,.35); color: #fff; font-size: 26px; cursor: pointer; transition: opacity .25s, background .15s; }
+  .nav:hover { background: rgba(0,0,0,.65); }
+  #prev { left: 8px; border-radius: 8px; }
+  #next { right: 8px; border-radius: 8px; }
+  .nav[disabled] { visibility: hidden; }
+
+  body.idle .bar, body.idle .nav { opacity: 0; }
+  body.idle { cursor: none; }
+
+  #msg { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; text-align: center; line-height: 1.7; opacity: .85; pointer-events: none; }
+  #msg[hidden] { display: none; }
+  #msg .big { font-size: 20px; }
+  #msg .sub { font-size: 13px; opacity: .7; }
+  #toast { position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%); background: rgba(40,40,40,.95);
+    padding: 10px 18px; border-radius: 8px; font-size: 13px; z-index: 9; box-shadow: 0 4px 18px rgba(0,0,0,.5); }
+  #toast[hidden] { display: none; }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <div id="top" class="bar">
+    <div id="name"></div>
+    <div id="counter"></div>
+    <button class="btn" id="openBtn" title="Ctrl+O">打开…</button>
+    <button class="btn" id="delBtn" title="Delete">删除</button>
+  </div>
+
+  <button id="prev" class="nav" title="上一张 (←)">&#10094;</button>
+  <button id="next" class="nav" title="下一张 (→)">&#10095;</button>
+
+  <div id="msg" hidden>
+    <div class="big">没有可显示的照片或视频</div>
+    <div class="sub">按 Ctrl+O 打开一张图片或一个视频</div>
+  </div>
+  <div id="toast" hidden></div>
+
+<script>
+(() => {
+  let files = [], cur = 0;
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), nameEl = $('name'), counterEl = $('counter'), msg = $('msg'), toast = $('toast');
+  const prevBtn = $('prev'), nextBtn = $('next');
+  let toastTimer = null, busy = false;
+
+  const api = async (path, method = 'GET') => {
+    const r = await fetch(path, { method, cache: 'no-store' });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+    return data;
+  };
+  const setTitle = t => { document.title = t; try { window.ipc.postMessage('title:' + t); } catch (_) {} };
+  const say = (text, ms = 3500) => {
+    toast.textContent = text; toast.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.hidden = true, ms);
+  };
+  const apply = s => { files = s.files; cur = Math.min(s.current, Math.max(files.length - 1, 0)); render(); };
+
+  function render() {
+    stage.replaceChildren();          // 同时销毁旧 <video>，停止它的播放与连接
+    toast.hidden = true;
+    if (!files.length) {
+      msg.hidden = false; nameEl.textContent = ''; counterEl.textContent = '';
+      prevBtn.disabled = nextBtn.disabled = true; setTitle('照片'); return;
+    }
+    msg.hidden = true;
+    const f = files[cur], src = 'media/' + cur;
+    let el;
+    if (f.kind === 'video') {
+      el = document.createElement('video');
+      el.controls = true; el.autoplay = true; el.preload = 'auto';
+      el.onerror = () => say('无法播放此视频（格式或编码不受系统解码器支持）', 6000);
+    } else {
+      el = document.createElement('img');
+      el.draggable = false;
+      el.onerror = () => say('无法显示此图片');
+    }
+    el.src = src;
+    stage.appendChild(el);
+
+    nameEl.textContent = f.name;
+    counterEl.textContent = (cur + 1) + ' / ' + files.length;
+    prevBtn.disabled = cur === 0;
+    nextBtn.disabled = cur === files.length - 1;
+    setTitle(f.name + ' - 照片');
+
+    // 预加载下一张图片，翻页更流畅
+    const nx = files[cur + 1];
+    if (nx && nx.kind === 'image') new Image().src = 'media/' + (cur + 1);
+  }
+
+  function go(delta) {
+    if (!files.length) return;
+    const n = Math.min(Math.max(cur + delta, 0), files.length - 1);
+    if (n !== cur) { cur = n; render(); }
+  }
+
+  async function del() {
+    if (!files.length || busy) return;
+    busy = true;
+    const name = files[cur].name;
+    try {
+      // 先卸载当前媒体，释放文件句柄，避免 Windows 因占用而删除失败
+      stage.replaceChildren();
+      apply(await api('delete?i=' + cur, 'POST'));
+      say('已将「' + name + '」移到回收站');
+    } catch (e) { render(); say(e.message, 5000); }
+    busy = false;
+  }
+
+  async function openDialog() {
+    if (busy) return;
+    busy = true;
+    try { apply(await api('open', 'POST')); } catch (e) { say(e.message); }
+    busy = false;
+  }
+
+  function togglePlay() {
+    const v = stage.querySelector('video');
+    if (v) v.paused ? v.play() : v.pause();
+  }
+
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  }
+
+  // 捕获阶段拦截：即使焦点在 <video> 上，←/→ 也用来翻页而不是快进
+  addEventListener('keydown', e => {
+    if (e.ctrlKey && e.key.toLowerCase() === 'o') { e.preventDefault(); openDialog(); return; }
+    if (e.ctrlKey || e.altKey || e.metaKey) return;
+    switch (e.key) {
+      case 'ArrowLeft': case 'PageUp':   go(-1); break;
+      case 'ArrowRight': case 'PageDown': go(1); break;
+      case 'Home': if (files.length) { cur = 0; render(); } break;
+      case 'End':  if (files.length) { cur = files.length - 1; render(); } break;
+      case 'Delete': del(); break;
+      case ' ': togglePlay(); break;
+      case 'f': case 'F': case 'F11': toggleFullscreen(); break;
+      case 'Escape': if (document.fullscreenElement) document.exitFullscreen(); break;
+      default: return;
+    }
+    e.preventDefault(); e.stopPropagation();
+  }, true);
+
+  addEventListener('wheel', e => { if (e.ctrlKey) return; go(e.deltaY > 0 ? 1 : -1); }, { passive: true });
+  prevBtn.onclick = () => go(-1);
+  nextBtn.onclick = () => go(1);
+  $('openBtn').onclick = openDialog;
+  $('delBtn').onclick = del;
+  stage.addEventListener('dblclick', e => { if (e.target.tagName !== 'VIDEO') toggleFullscreen(); });
+
+  // 鼠标静止 2.5 秒后隐藏工具栏
+  let idleTimer;
+  const wake = () => { document.body.classList.remove('idle'); clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => document.body.classList.add('idle'), 2500); };
+  addEventListener('mousemove', wake); addEventListener('keydown', wake); wake();
+
+  api('state').then(apply).catch(e => say(e.message));
+})();
+</script>
+</body>
+</html>
