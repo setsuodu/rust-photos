@@ -7,6 +7,12 @@
 //!     * 以 Range 方式流式提供图片/视频（视频拖动进度条需要）
 //!     * 文件夹扫描、删除（进回收站）、打开文件对话框
 //! - 所有请求带一次性随机 token，避免本机浏览器里的其他网页误调用删除接口
+//!
+//! 命令行：
+//!   rust-photos.exe [文件或文件夹]   打开指定内容
+//!   rust-photos.exe                  显示空白页（点「打开」或 Ctrl+O）
+//!   rust-photos.exe --register       注册为图片/视频的打开方式（当前用户）
+//!   rust-photos.exe --unregister     取消注册
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -37,6 +43,8 @@ const IMAGE_EXTS: &[&str] = &[
     "jpg", "jpeg", "jfif", "png", "gif", "bmp", "webp", "ico", "svg", "avif",
 ];
 const VIDEO_EXTS: &[&str] = &["mp4", "m4v", "webm", "mov", "mkv", "ogv"];
+
+const PROGID: &str = "rust-photos.file";
 
 #[derive(Clone, Copy, PartialEq)]
 enum Kind {
@@ -98,7 +106,11 @@ struct State {
 
 impl State {
     fn empty() -> Self {
-        State { dir: PathBuf::new(), files: Vec::new(), current: 0 }
+        State {
+            dir: PathBuf::new(),
+            files: Vec::new(),
+            current: 0,
+        }
     }
 
     fn to_json(&self) -> String {
@@ -138,8 +150,16 @@ fn load_path(path: &Path) -> Option<State> {
 
     // 与资源管理器一致的"自然排序"：img2 排在 img10 之前，不区分大小写
     files.sort_by(|a, b| {
-        let an = a.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
-        let bn = b.file_name().unwrap_or_default().to_string_lossy().to_lowercase();
+        let an = a
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
+        let bn = b
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_lowercase();
         natord::compare(&an, &bn)
     });
 
@@ -147,7 +167,11 @@ fn load_path(path: &Path) -> Option<State> {
         .and_then(|t| files.iter().position(|f| *f == t))
         .unwrap_or(0);
 
-    Some(State { dir, files, current })
+    Some(State {
+        dir,
+        files,
+        current,
+    })
 }
 
 fn pick_file_dialog() -> Option<PathBuf> {
@@ -159,6 +183,127 @@ fn pick_file_dialog() -> Option<PathBuf> {
         .add_filter("图片", IMAGE_EXTS)
         .add_filter("视频", VIDEO_EXTS)
         .pick_file()
+}
+
+fn load_window_icon() -> Option<tao::window::Icon> {
+    let bytes = include_bytes!("../icon.ico");
+    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let (w, h) = img.dimensions();
+    tao::window::Icon::from_rgba(img.into_raw(), w, h).ok()
+}
+
+// ---------------------------------------------------------------- 文件关联 ----
+
+#[cfg(windows)]
+fn register_associations() -> Result<(), String> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe = dunce_path(&exe);
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let classes = hkcu
+        .open_subkey_with_flags("Software\\Classes", KEY_WRITE)
+        .map_err(|e| format!("无法写入注册表: {e}"))?;
+
+    // ProgID
+    let (prog, _) = classes
+        .create_subkey(PROGID)
+        .map_err(|e| e.to_string())?;
+    prog.set_value("", &"照片")
+        .map_err(|e| e.to_string())?;
+    let (cmd, _) = prog
+        .create_subkey("shell\\open\\command")
+        .map_err(|e| e.to_string())?;
+    cmd.set_value("", &format!("\"{exe}\" \"%1\""))
+        .map_err(|e| e.to_string())?;
+    let (icon, _) = prog
+        .create_subkey("DefaultIcon")
+        .map_err(|e| e.to_string())?;
+    icon.set_value("", &format!("{exe},0"))
+        .map_err(|e| e.to_string())?;
+
+    for ext in IMAGE_EXTS.iter().chain(VIDEO_EXTS.iter()) {
+        let key_name = format!(".{ext}");
+        let (ext_key, _) = classes
+            .create_subkey(&key_name)
+            .map_err(|e| e.to_string())?;
+        // 设为当前用户默认打开方式
+        ext_key
+            .set_value("", &PROGID)
+            .map_err(|e| e.to_string())?;
+        // 同时挂到「打开方式」列表
+        let (owp, _) = ext_key
+            .create_subkey("OpenWithProgids")
+            .map_err(|e| e.to_string())?;
+        owp.set_value(PROGID, &"")
+            .map_err(|e| e.to_string())?;
+    }
+
+    // 通知资源管理器刷新图标/关联
+    notify_shell();
+    Ok(())
+}
+
+#[cfg(windows)]
+fn unregister_associations() -> Result<(), String> {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let classes = hkcu
+        .open_subkey_with_flags("Software\\Classes", KEY_WRITE)
+        .map_err(|e| format!("无法写入注册表: {e}"))?;
+
+    for ext in IMAGE_EXTS.iter().chain(VIDEO_EXTS.iter()) {
+        if let Ok(ext_key) =
+            classes.open_subkey_with_flags(format!(".{ext}"), KEY_READ | KEY_WRITE)
+        {
+            if let Ok(val) = ext_key.get_value::<String, _>("") {
+                if val == PROGID {
+                    let _ = ext_key.delete_value("");
+                }
+            }
+            if let Ok(owp) =
+                ext_key.open_subkey_with_flags("OpenWithProgids", KEY_WRITE)
+            {
+                let _ = owp.delete_value(PROGID);
+            }
+        }
+    }
+    let _ = classes.delete_subkey_all(PROGID);
+    notify_shell();
+    Ok(())
+}
+
+#[cfg(windows)]
+fn dunce_path(p: &Path) -> String {
+    // 去掉 \\?\ 前缀，注册表命令行更稳妥
+    let s = p.to_string_lossy();
+    let s = s.strip_prefix(r"\\?\\").unwrap_or(&s);
+    s.replace('/', "\\")
+}
+
+#[cfg(windows)]
+fn notify_shell() {
+    // SHCNE_ASSOCCHANGED = 0x08000000, SHCNF_IDLIST = 0
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SHChangeNotify(event: i32, flags: u32, item1: usize, item2: usize);
+    }
+    unsafe {
+        SHChangeNotify(0x0800_0000, 0, 0, 0);
+    }
+}
+
+#[cfg(not(windows))]
+fn register_associations() -> Result<(), String> {
+    Err("仅支持 Windows".into())
+}
+
+#[cfg(not(windows))]
+fn unregister_associations() -> Result<(), String> {
+    Err("仅支持 Windows".into())
 }
 
 // ---------------------------------------------------------------- HTTP ----
@@ -188,7 +333,6 @@ fn parse_range(value: &str, total: u64) -> Option<(u64, u64)> {
         return None;
     }
     if a.is_empty() {
-        // 后缀区间：最后 N 字节
         let n: u64 = b.parse().ok()?;
         if n == 0 {
             return None;
@@ -196,7 +340,11 @@ fn parse_range(value: &str, total: u64) -> Option<(u64, u64)> {
         Some((total.saturating_sub(n), total - 1))
     } else {
         let start: u64 = a.parse().ok()?;
-        let end: u64 = if b.is_empty() { total - 1 } else { b.parse().ok()? };
+        let end: u64 = if b.is_empty() {
+            total - 1
+        } else {
+            b.parse().ok()?
+        };
         if start > end || start >= total {
             return None;
         }
@@ -241,11 +389,19 @@ fn serve_media(req: Request, path: PathBuf) {
         hdr("Cache-Control", "no-store"),
     ];
     if partial {
-        headers.push(hdr("Content-Range", &format!("bytes {start}-{end}/{total}")));
+        headers.push(hdr(
+            "Content-Range",
+            &format!("bytes {start}-{end}/{total}"),
+        ));
     }
     let status = if partial { 206 } else { 200 };
-    let resp = Response::new(StatusCode(status), headers, file.take(len), Some(len as usize), None);
-    // 播放器中途拖动/关闭会断开连接，忽略写入错误即可
+    let resp = Response::new(
+        StatusCode(status),
+        headers,
+        file.take(len),
+        Some(len as usize),
+        None,
+    );
     let _ = req.respond(resp);
 }
 
@@ -288,20 +444,26 @@ fn handle(req: Request, token: &str, state: &Mutex<State>) {
             }
         }
 
-        // 删除：文件进回收站（可恢复），与「照片」应用行为一致
         (Method::Post, "delete") => {
             let Some(i) = query_param(query, "i").and_then(|v| v.parse::<usize>().ok()) else {
                 return respond_status(req, 400);
             };
             let mut s = state.lock().unwrap();
             if i >= s.files.len() {
-                return respond_json(req, 404, serde_json::json!({ "error": "文件不存在" }).to_string());
+                return respond_json(
+                    req,
+                    404,
+                    serde_json::json!({ "error": "文件不存在" }).to_string(),
+                );
             }
             match trash::delete(&s.files[i]) {
                 Ok(()) => {
                     s.files.remove(i);
-                    // 删除后显示"下一张"；删的是最后一张则显示新的最后一张
-                    s.current = if s.files.is_empty() { 0 } else { i.min(s.files.len() - 1) };
+                    s.current = if s.files.is_empty() {
+                        0
+                    } else {
+                        i.min(s.files.len() - 1)
+                    };
                     let body = s.to_json();
                     drop(s);
                     respond_json(req, 200, body);
@@ -317,7 +479,6 @@ fn handle(req: Request, token: &str, state: &Mutex<State>) {
             }
         }
 
-        // Ctrl+O：弹出系统"打开文件"对话框（此处不持有锁，避免阻塞其他请求）
         (Method::Post, "open") => {
             if let Some(p) = pick_file_dialog() {
                 if let Some(ns) = load_path(&p) {
@@ -338,16 +499,69 @@ fn random_token() -> String {
     format!("{a:016x}{b:016x}")
 }
 
+fn show_console_message(msg: &str) {
+    // windows_subsystem=windows 时没有控制台，用 MessageBox 提示注册结果
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn MessageBoxW(hwnd: isize, text: *const u16, caption: *const u16, ty: u32) -> i32;
+        }
+        let to_wide = |s: &str| {
+            std::ffi::OsStr::new(s)
+                .encode_wide()
+                .chain(std::iter::once(0))
+                .collect::<Vec<u16>>()
+        };
+        let text = to_wide(msg);
+        let caption = to_wide("照片");
+        unsafe {
+            MessageBoxW(0, text.as_ptr(), caption.as_ptr(), 0x40);
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        eprintln!("{msg}");
+    }
+}
+
 // ---------------------------------------------------------------- main ----
 
 fn main() {
-    // 用法：rust-photos.exe [文件或文件夹]
-    // 不带参数时弹出"打开文件"对话框；选择取消则进入空白页（Ctrl+O 可再次打开）
-    let initial = match std::env::args_os().nth(1).map(PathBuf::from) {
-        Some(p) => load_path(&p),
-        None => pick_file_dialog().and_then(|p| load_path(&p)),
+    let mut args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+
+    if let Some(first) = args.first().and_then(|a| a.to_str()) {
+        match first {
+            "--register" | "/register" => {
+                match register_associations() {
+                    Ok(()) => show_console_message(
+                        "已注册为图片与视频的打开方式（当前用户）。\n\n\
+若资源管理器仍用旧程序打开，可右键文件 → 打开方式 → 选择「照片」，\
+或到「设置 → 应用 → 默认应用」里指定。",
+                    ),
+                    Err(e) => show_console_message(&format!("注册失败：{e}")),
+                }
+                return;
+            }
+            "--unregister" | "/unregister" => {
+                match unregister_associations() {
+                    Ok(()) => show_console_message("已取消文件关联注册。"),
+                    Err(e) => show_console_message(&format!("取消注册失败：{e}")),
+                }
+                return;
+            }
+            _ => {}
+        }
     }
-    .unwrap_or_else(State::empty);
+
+    // 用法：rust-photos.exe [文件或文件夹]
+    // 不带参数时进入空白页（点「打开」或 Ctrl+O），不再自动弹对话框
+    let initial = match args.first().map(PathBuf::from) {
+        Some(p) => load_path(&p).unwrap_or_else(State::empty),
+        None => State::empty(),
+    };
+    let _ = args;
 
     let state = Arc::new(Mutex::new(initial));
     let token = random_token();
@@ -360,7 +574,6 @@ fn main() {
         let token = token.clone();
         thread::spawn(move || {
             for req in server.incoming_requests() {
-                // 每个请求一个线程：视频流是长连接，不能阻塞其他请求
                 let state = Arc::clone(&state);
                 let token = token.clone();
                 thread::spawn(move || handle(req, &token, &state));
@@ -371,28 +584,26 @@ fn main() {
     let event_loop = EventLoopBuilder::<String>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
-    let window = WindowBuilder::new()
+    let mut wb = WindowBuilder::new()
         .with_title("照片")
-        .with_inner_size(LogicalSize::new(1200.0, 800.0))
-        .build(&event_loop)
-        .expect("无法创建窗口");
+        .with_inner_size(LogicalSize::new(1200.0, 800.0));
+    if let Some(icon) = load_window_icon() {
+        wb = wb.with_window_icon(Some(icon));
+    }
+    let window = wb.build(&event_loop).expect("无法创建窗口");
 
-    // WebView2 的用户数据目录放到 %LOCALAPPDATA%，避免默认写到 exe 旁边（装在只读目录会失败）
     let data_dir = std::env::var_os("LOCALAPPDATA")
         .map(|p| PathBuf::from(p).join("rust-photos").join("webview2"));
     let mut web_context = wry::WebContext::new(data_dir);
 
     let builder = WebViewBuilder::new_with_web_context(&mut web_context)
         .with_url(format!("http://127.0.0.1:{port}/{token}/"))
-        // 页面通过 ipc 告诉原生窗口更新标题：title:xxx
         .with_ipc_handler(move |req| {
             if let Some(t) = req.body().strip_prefix("title:") {
                 let _ = proxy.send_event(t.to_string());
             }
         });
 
-    // 允许视频不经手势直接带声音自动播放（打开视频文件即播放）
-    // 同时关闭 WebView2 自带的浏览器快捷键（F5/Ctrl+P 等），按键全部交给页面处理
     #[cfg(windows)]
     let builder = builder
         .with_additional_browser_args(
@@ -406,9 +617,10 @@ fn main() {
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
         match event {
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                *control_flow = ControlFlow::Exit
-            }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => *control_flow = ControlFlow::Exit,
             Event::UserEvent(title) => window.set_title(&title),
             _ => {}
         }

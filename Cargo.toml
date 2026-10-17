@@ -1,6 +1,6 @@
 [package]
 name = "rust-photos"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 
 [dependencies]
@@ -11,3 +11,10 @@ tao = "0.37.1"
 tiny_http = "0.12.0"
 trash = "5.2.9"
 wry = "0.57.0"
+image = { version = "0.25", default-features = false, features = ["ico"] }
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
+[build-dependencies]
+winresource = "0.1"

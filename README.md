@@ -8,11 +8,30 @@
 
 ```powershell
 cargo run --release -- "D:\Pictures\a.jpg"   # 打开某张图片/视频，并浏览它所在文件夹
-cargo run --release                            # 不带参数：弹出"打开文件"对话框
+cargo run --release                            # 空白页，点「打开」或 Ctrl+O
 cargo build --release                          # 产物：target\release\rust-photos.exe
 ```
 
-想要双击图片就用它打开：右键图片 →「打开方式」→「选择其他应用」→ 选 `rust-photos.exe`。
+## 注册为默认打开方式
+
+把 exe 放到固定位置后执行一次（写入**当前用户**注册表，一般不需要管理员）：
+
+```powershell
+.\rust-photos.exe --register
+```
+
+取消：
+
+```powershell
+.\rust-photos.exe --unregister
+```
+
+注册后双击 jpg/png/mp4 等会用本程序打开。若系统仍用旧程序，可：
+
+- 右键文件 → **打开方式** → 选择「照片」
+- 或 **设置 → 应用 → 默认应用** 里按扩展名指定
+
+支持扩展名：jpg/jpeg/jfif/png/gif/bmp/webp/ico/svg/avif；mp4/m4v/webm/mov/mkv/ogv。
 
 ## 快捷键
 
@@ -27,10 +46,11 @@ cargo build --release                          # 产物：target\release\rust-ph
 
 ## 实现说明
 
-- `tao` + `wry`：原生窗口 + WebView2，图片与视频交给系统解码器，所以支持 H.264 mp4 等系统能播的格式。
-- `tiny_http`：只监听 `127.0.0.1` 随机端口，URL 带一次性随机 token；负责页面、Range 视频流、文件夹扫描、删除、打开对话框。
-- `trash`：删除走回收站。`natord`：与资源管理器一致的自然排序（img2 在 img10 之前）。
-- 支持格式：jpg/jpeg/jfif/png/gif/bmp/webp/ico/svg/avif；mp4/m4v/webm/mov/mkv/ogv（mkv、mov 能否播放取决于编码和系统解码器）。
+- `tao` + `wry`：原生窗口 + WebView2，图片与视频交给系统解码器。
+- `tiny_http`：只监听 `127.0.0.1` 随机端口，URL 带一次性随机 token。
+- `trash`：删除走回收站。`natord`：自然排序。
+- `icon.ico` 嵌入 exe（任务栏/资源管理器图标）并用于窗口图标。
+- `--register` 写入 `HKCU\Software\Classes`，出现在「打开方式」并尽量设为当前用户默认。
 
 ## 后续可做
 
