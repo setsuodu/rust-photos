@@ -1,7 +1,6 @@
 ; Inno Setup - install and register image/video associations
-#define MyAppName "Photos"
-#define MyAppNameCN "\u7167\u7247"
-#define MyAppExe "rust-photos.exe"
+#define MyAppName "照片"
+#define MyAppExeName "rust-photos.exe"
 #define MyAppPublisher "setsuodu"
 #define MyAppURL "https://github.com/setsuodu/rust-photos"
 #define MyAppProgId "rust-photos.file"
@@ -12,17 +11,17 @@
 
 [Setup]
 AppId={{A8F3C2E1-9B4D-4F6A-8E2C-1D5B7A9C0E3F}
-AppName={#MyAppNameCN}
+AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 DefaultDirName={localappdata}\rust-photos
-DefaultGroupName={#MyAppNameCN}
+DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=..\dist
 OutputBaseFilename=rust-photos-setup-{#MyAppVersion}
 SetupIconFile=..\icon.ico
-UninstallDisplayIcon={app}\{#MyAppExe}
+UninstallDisplayIcon={app}\rust-photos.exe
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -39,20 +38,18 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Name: "assoc"; Description: "Set as default app for images and videos"; GroupDescription: "Additional options:"; Flags: checkedonce
 
 [Files]
-Source: "..\target\x86_64-pc-windows-msvc\release\{#MyAppExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\target\x86_64-pc-windows-msvc\release\rust-photos.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppNameCN}"; Filename: "{app}\{#MyAppExe}"
-Name: "{group}\Uninstall {#MyAppNameCN}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppNameCN}"; Filename: "{app}\{#MyAppExe}"; Tasks: desktopicon
+Name: "{group}\{#MyAppName}"; Filename: "{app}\rust-photos.exe"
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\rust-photos.exe"; Tasks: desktopicon
 
 [Registry]
-; ProgID
-Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}"; ValueType: string; ValueName: ""; ValueData: "{#MyAppNameCN}"; Flags: uninsdeletekey; Tasks: assoc
-Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExe},0"; Tasks: assoc
-Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExe}"" ""%1"""; Tasks: assoc
+Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}"; ValueType: string; ValueName: ""; ValueData: "{#MyAppName}"; Flags: uninsdeletekey; Tasks: assoc
+Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\rust-photos.exe,0"; Tasks: assoc
+Root: HKCU; Subkey: "Software\Classes\{#MyAppProgId}\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\rust-photos.exe"" ""%1"""; Tasks: assoc
 
-; Images
 Root: HKCU; Subkey: "Software\Classes\.jpg"; ValueType: string; ValueName: ""; ValueData: "{#MyAppProgId}"; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\.jpg\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppProgId}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\.jpeg"; ValueType: string; ValueName: ""; ValueData: "{#MyAppProgId}"; Tasks: assoc
@@ -74,7 +71,6 @@ Root: HKCU; Subkey: "Software\Classes\.svg\OpenWithProgids"; ValueType: string; 
 Root: HKCU; Subkey: "Software\Classes\.avif"; ValueType: string; ValueName: ""; ValueData: "{#MyAppProgId}"; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\.avif\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppProgId}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assoc
 
-; Videos
 Root: HKCU; Subkey: "Software\Classes\.mp4"; ValueType: string; ValueName: ""; ValueData: "{#MyAppProgId}"; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\.mp4\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppProgId}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assoc
 Root: HKCU; Subkey: "Software\Classes\.m4v"; ValueType: string; ValueName: ""; ValueData: "{#MyAppProgId}"; Tasks: assoc
@@ -89,4 +85,4 @@ Root: HKCU; Subkey: "Software\Classes\.ogv"; ValueType: string; ValueName: ""; V
 Root: HKCU; Subkey: "Software\Classes\.ogv\OpenWithProgids"; ValueType: string; ValueName: "{#MyAppProgId}"; ValueData: ""; Flags: uninsdeletevalue; Tasks: assoc
 
 [Run]
-Filename: "{app}\{#MyAppExe}"; Description: "Launch {#MyAppNameCN}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\rust-photos.exe"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
