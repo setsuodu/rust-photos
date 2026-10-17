@@ -27,9 +27,6 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: Build
-        run: cargo build --release --target x86_64-pc-windows-msvc
-
       - name: Version from tag
         id: ver
         shell: bash
@@ -39,6 +36,13 @@ jobs:
           else
             echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Build
+        shell: bash
+        run: cargo build --release --target x86_64-pc-windows-msvc
+        env:
+          # 写入二进制，设置面板显示与 tag 一致的版本
+          APP_VERSION: ${{ steps.ver.outputs.version }}
 
       - name: Install Inno Setup
         shell: powershell
