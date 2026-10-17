@@ -38,8 +38,8 @@ use wry::WebViewBuilder;
 use wry::WebViewBuilderExtWindows;
 
 const INDEX_HTML: &str = include_str!("index.html");
-/// 与 Cargo.toml / CI tag 同步的客户端版本号
-const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// 客户端版本：CI 用 APP_VERSION（git tag）注入；本地回退 Cargo.toml
+const APP_VERSION: &str = env!("APP_VERSION");
 
 const IMAGE_EXTS: &[&str] = &[
     "jpg", "jpeg", "jfif", "png", "gif", "bmp", "webp", "ico", "svg", "avif",
