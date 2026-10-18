@@ -12,6 +12,7 @@ tiny_http = "0.12.0"
 trash = "5.2.9"
 wry = "0.57.0"
 image = { version = "0.25", default-features = false, features = ["ico"] }
+dunce = "1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
