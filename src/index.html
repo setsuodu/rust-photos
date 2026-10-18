@@ -144,7 +144,8 @@ async function del(){if(!files.length||busy)return;busy=true;const delIndex=cur;
 async function openDialog(){if(busy)return;busy=true;try{apply(await api('open','POST'))}catch(e){say(e.message)}busy=false}
 function togglePlay(){const v=currentVideo();if(!v)return;if(v.paused)v.play().catch(()=>{});else v.pause()}
 function toggleMute(){const v=currentVideo();if(!v)return;v.muted=!v.muted;updateMuteIcon()}
-function toggleFullscreen(){if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen().catch(()=>{})}
+let isNativeFs=false;
+function toggleFullscreen(){isNativeFs=!isNativeFs;try{window.ipc.postMessage(isNativeFs?'fullscreen-on':'fullscreen-off')}catch(_){isNativeFs=!isNativeFs}}
 async function takeScreenshot(){const media=stage.querySelector('video, img');if(!media){say('没有可截图的内容');return}try{const canvas=document.createElement('canvas');let w,h;if(media.tagName==='VIDEO'){w=media.videoWidth||media.clientWidth;h=media.videoHeight||media.clientHeight}else{w=media.naturalWidth||media.clientWidth;h=media.naturalHeight||media.clientHeight}if(!w||!h){say('无法截图');return}canvas.width=w;canvas.height=h;canvas.getContext('2d').drawImage(media,0,0,w,h);const b64=(canvas.toDataURL('image/png').split(',')[1]||'');if(!b64){say('截图失败');return}const f=files[cur];const stem=stemName(f&&f.name);let timeLabel='';if(media.tagName==='VIDEO')timeLabel=fmtTimeMmss(media.currentTime||0);const filename=timeLabel?(stem+'_'+timeLabel):stem;const res=await api('screenshot','POST',{data:b64,filename},'application/json');say('已保存：'+(res.path||'Screenshots'))}catch(e){say(e.message||'截图失败',5000)}}
 function openSettings(){$('appVersion').textContent=APP_VERSION;$('settingsPanel').hidden=false}
 function closeSettings(){$('settingsPanel').hidden=true}
@@ -158,7 +159,7 @@ $('vseek').addEventListener('pointerup',()=>{seeking=false});
 $('vseek').addEventListener('input',()=>{const v=currentVideo();if(!v||!v.duration)return;const t=($('vseek').value/1000)*v.duration;$('vtime').textContent=fmtTime(t)+' / '+fmtTime(v.duration)});
 $('vseek').addEventListener('change',()=>{const v=currentVideo();if(!v||!v.duration)return;v.currentTime=($('vseek').value/1000)*v.duration;seeking=false});
 stage.addEventListener('click',e=>{if(e.target.tagName==='VIDEO')togglePlay()});
-addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='o'){e.preventDefault();openDialog();return}if(e.key==='Escape'){e.preventDefault();if(!$('settingsPanel').hidden){closeSettings();return}if(document.fullscreenElement){document.exitFullscreen();return}quitApp();return}if(e.key==='F5'){e.preventDefault();takeScreenshot();return}if(e.ctrlKey||e.altKey||e.metaKey)return;switch(e.key){case'ArrowLeft':case'PageUp':go(-1);break;case'ArrowRight':case'PageDown':go(1);break;case'Home':if(files.length){cur=0;render()}break;case'End':if(files.length){cur=files.length-1;render()}break;case'Delete':del();break;case' ':togglePlay();break;case'f':case'F':case'F11':toggleFullscreen();break;case'm':case'M':toggleMute();break;default:return}e.preventDefault();e.stopPropagation()},true);
+addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='o'){e.preventDefault();openDialog();return}if(e.key==='Escape'){e.preventDefault();if(!$('settingsPanel').hidden){closeSettings();return}if(isNativeFs){isNativeFs=false;try{window.ipc.postMessage('fullscreen-off')}catch(_){}return}quitApp();return}if(e.key==='F5'){e.preventDefault();takeScreenshot();return}if(e.ctrlKey||e.altKey||e.metaKey)return;switch(e.key){case'ArrowLeft':case'PageUp':go(-1);break;case'ArrowRight':case'PageDown':go(1);break;case'Home':if(files.length){cur=0;render()}break;case'End':if(files.length){cur=files.length-1;render()}break;case'Delete':del();break;case' ':togglePlay();break;case'f':case'F':case'F11':toggleFullscreen();break;case'm':case'M':toggleMute();break;default:return}e.preventDefault();e.stopPropagation()},true);
 addEventListener('wheel',e=>{if(e.ctrlKey)return;go(e.deltaY>0?1:-1)},{passive:true});
 prevBtn.onclick=()=>go(-1);nextBtn.onclick=()=>go(1);
 $('openBtn').onclick=openDialog;$('openMain').onclick=openDialog;$('delBtn').onclick=del;
@@ -167,7 +168,7 @@ $('settingsPanel').onclick=e=>{if(e.target===$('settingsPanel'))closeSettings()}
 stage.addEventListener('dblclick',e=>toggleFullscreen());
 const ctxMenu=$('ctxMenu');
 function hideCtx(){ctxMenu.classList.remove('show')}
-function showCtx(x,y){const fs=!!document.fullscreenElement;$('ctxFs').textContent=fs?'退出全屏':'全屏';ctxMenu.style.left=Math.min(x,window.innerWidth-180)+'px';ctxMenu.style.top=Math.min(y,window.innerHeight-120)+'px';ctxMenu.classList.add('show')}
+function showCtx(x,y){$('ctxFs').textContent=isNativeFs?'退出全屏':'全屏';ctxMenu.style.left=Math.min(x,window.innerWidth-180)+'px';ctxMenu.style.top=Math.min(y,window.innerHeight-120)+'px';ctxMenu.classList.add('show')}
 stage.addEventListener('contextmenu',e=>{const v=e.target.closest&&e.target.closest('video');if(!v){hideCtx();return}e.preventDefault();e.stopPropagation();showCtx(e.clientX,e.clientY)});
 addEventListener('click',hideCtx);
 addEventListener('blur',hideCtx);
