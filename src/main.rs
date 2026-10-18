@@ -183,8 +183,17 @@ fn unregister_associations() -> Result<(), String> {
 #[cfg(windows)]
 fn dunce_path(p: &Path) -> String {
     let s = p.to_string_lossy();
-    let s = s.strip_prefix("\\\\?\\").unwrap_or(&s);
-    s.replace('/', "\\")
+    // \\?\\UNC\\server\\share\\file -> \\server\\share\\file
+    // \\?\\C:\\path -> C:\\path
+    // 错误地只 strip \\?\\ 会把 UNC 路径变成无效的 "UNC\\server\\..."
+    let s = if let Some(rest) = s.strip_prefix(r#"\\?\\UNC\\"#) {
+        format!(r#"\\{}"# , rest)
+    } else if let Some(rest) = s.strip_prefix(r#"\\?\\"#) {
+        rest.to_string()
+    } else {
+        s.into_owned()
+    };
+    s.replace('/', r#"\\"#)
 }
 
 #[cfg(windows)]
@@ -252,12 +261,16 @@ fn reveal_in_explorer(path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let abs = fs::canonicalize(path).map_err(|e| format!("无法解析路径：{e}"))?;
-        let path = dunce_path(&abs);
-        if !Path::new(&path).is_file() {
-            return Err(format!("文件不存在：{path}"));
+        // 网络盘 canonicalize 会变成 \\?\\UNC\\...，必须用 dunce_path 正确还原
+        let display = match fs::canonicalize(path) {
+            Ok(abs) => dunce_path(&abs),
+            Err(_) => dunce_path(path),
+        };
+        let ok = Path::new(&display).exists() || path.exists();
+        if !ok {
+            return Err(format!("文件不存在：{display}"));
         }
-        let arg = format!("/select,\"{path}\"");
+        let arg = format!("/select,\"{display}\"");
         std::process::Command::new("explorer.exe")
             .raw_arg(arg)
             .spawn()
@@ -657,7 +670,7 @@ fn main() {
     #[cfg(windows)]
     let builder = builder
         .with_additional_browser_args(
-            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+            "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \\
              --autoplay-policy=no-user-gesture-required",
         )
         .with_browser_accelerator_keys(false);
