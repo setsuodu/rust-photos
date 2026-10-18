@@ -14,7 +14,7 @@ use tao::{
     dpi::LogicalSize,
     event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder},
-    window::WindowBuilder,
+    window::{Fullscreen, WindowBuilder},
 };
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use wry::WebViewBuilder;
@@ -550,6 +550,10 @@ fn main() {
             let body = req.body();
             if body == "quit" {
                 let _ = proxy.send_event("__quit__".to_string());
+            } else if body == "fullscreen-on" {
+                let _ = proxy.send_event("__fullscreen_on__".to_string());
+            } else if body == "fullscreen-off" {
+                let _ = proxy.send_event("__fullscreen_off__".to_string());
             } else if let Some(t) = body.strip_prefix("title:") {
                 let _ = proxy.send_event(t.to_string());
             }
@@ -571,6 +575,10 @@ fn main() {
             Event::UserEvent(msg) => {
                 if msg == "__quit__" {
                     *control_flow = ControlFlow::Exit;
+                } else if msg == "__fullscreen_on__" {
+                    window.set_fullscreen(Some(Fullscreen::Borderless(None)));
+                } else if msg == "__fullscreen_off__" {
+                    window.set_fullscreen(None);
                 } else {
                     window.set_title(&msg);
                 }
