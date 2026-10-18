@@ -182,17 +182,8 @@ fn unregister_associations() -> Result<(), String> {
 
 #[cfg(windows)]
 fn dunce_path(p: &Path) -> String {
-    let s = p.to_string_lossy();
-    // Network: \\\\?\\UNC\\server\\share -> \\\\server\\share
-    // Local:   \\\\?\\C:\\path -> C:\\path
-    let s = if let Some(rest) = s.strip_prefix("\\\\\\\\?\\\\UNC\\\\") {
-        format!("\\\\\\\\{}", rest)
-    } else if let Some(rest) = s.strip_prefix("\\\\\\\\?\\\\") {
-        rest.to_string()
-    } else {
-        s.into_owned()
-    };
-    s.replace('/', "\\\\")
+    // dunce::simplified fixes \\?\\UNC\\... for NAS / mapped drives
+    dunce::simplified(p).to_string_lossy().replace('/', "\\")
 }
 
 #[cfg(windows)]
@@ -260,13 +251,11 @@ fn reveal_in_explorer(path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // NAS / 映射盘 canonicalize 后是 \\\\?\\UNC\\...，dunce_path 必须正确还原
         let display = match fs::canonicalize(path) {
             Ok(abs) => dunce_path(&abs),
             Err(_) => dunce_path(path),
         };
-        let ok = Path::new(&display).exists() || path.exists();
-        if !ok {
+        if !Path::new(&display).exists() && !path.exists() {
             return Err(format!("文件不存在：{display}"));
         }
         let arg = format!("/select,\"{display}\"");
