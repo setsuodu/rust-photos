@@ -54,6 +54,10 @@ body.empty .bar,body.empty .nav,body.empty #vbar{opacity:0;pointer-events:none}
 .settings-row .key{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;opacity:.95;white-space:nowrap;background:rgba(255,255,255,.08);padding:2px 8px;border-radius:4px}
 .settings-section{font-size:12px;opacity:.5;margin:14px 0 4px}
 .settings-actions{margin-top:16px;display:flex;justify-content:flex-end}
+#ctxMenu{position:fixed;z-index:30;min-width:160px;background:#2d2d2d;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 0;box-shadow:0 8px 24px rgba(0,0,0,.5);display:none}
+#ctxMenu.show{display:block}
+#ctxMenu button{display:block;width:100%;text-align:left;background:transparent;border:0;color:#fff;font:inherit;font-size:13px;padding:8px 16px;cursor:pointer}
+#ctxMenu button:hover{background:rgba(255,255,255,.12)}
 </style>
 </head>
 <body class="empty">
@@ -96,10 +100,15 @@ body.empty .bar,body.empty .nav,body.empty #vbar{opacity:0;pointer-events:none}
 <div class="settings-row"><span>全屏</span><span class="key">F · F11</span></div>
 <div class="settings-row"><span>退出全屏 / 关闭设置</span><span class="key">Esc</span></div>
 <div class="settings-row"><span>退出软件</span><span class="key">Esc</span></div>
-<div class="settings-row"><span>截图（名称+分秒）</span><span class="key">F5</span></div>
+<div class="settings-row"><span>截图（名称_mmss）</span><span class="key">F5</span></div>
 <div class="settings-row"><span>切换播放模式</span><span class="key">底栏图标</span></div>
 <div class="settings-actions"><button class="btn" id="settingsClose">关闭</button></div>
 </div>
+</div>
+<div id="ctxMenu" role="menu">
+<button type="button" id="ctxFs" role="menuitem">全屏</button>
+<button type="button" id="ctxFrame" role="menuitem">保存视频帧</button>
+<button type="button" id="ctxReveal" role="menuitem">打开所在位置</button>
 </div>
 <script>
 (()=>{
@@ -119,7 +128,7 @@ const say=(text,ms=3500)=>{toast.textContent=text;toast.hidden=false;clearTimeou
 const apply=s=>{files=s.files||[];cur=files.length?Math.min(s.current|0,files.length-1):0;mediaRev++;render()};
 function mediaUrl(i){return 'media/'+i+'?r='+mediaRev}
 function fmtTime(sec){if(!isFinite(sec)||sec<0)sec=0;sec=Math.floor(sec);const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;if(h>0)return h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');return m+':'+String(s).padStart(2,'0')}
-function fmtTimeCn(sec){if(!isFinite(sec)||sec<0)sec=0;sec=Math.floor(sec);const m=Math.floor(sec/60),s=sec%60;return m+'分'+String(s).padStart(2,'0')+'秒'}
+function fmtTimeMmss(sec){if(!isFinite(sec)||sec<0)sec=0;sec=Math.floor(sec);const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;if(h>0)return String(h).padStart(2,'0')+String(m).padStart(2,'0')+String(s).padStart(2,'0');return String(m).padStart(2,'0')+String(s).padStart(2,'0')}
 function stemName(name){const n=(name||'截图').replace(/\.[^.]+$/,'');return n.replace(/[\\/:*?"<>|]/g,'_').trim()||'截图'}
 function clearStage(){const old=stage.querySelector('video');if(old){try{old.pause();old.removeAttribute('src');old.load()}catch(_){}}stage.replaceChildren()}
 function currentVideo(){return stage.querySelector('video')}
@@ -136,7 +145,7 @@ async function openDialog(){if(busy)return;busy=true;try{apply(await api('open',
 function togglePlay(){const v=currentVideo();if(!v)return;if(v.paused)v.play().catch(()=>{});else v.pause()}
 function toggleMute(){const v=currentVideo();if(!v)return;v.muted=!v.muted;updateMuteIcon()}
 function toggleFullscreen(){if(document.fullscreenElement)document.exitFullscreen();else document.documentElement.requestFullscreen().catch(()=>{})}
-async function takeScreenshot(){const media=stage.querySelector('video, img');if(!media){say('没有可截图的内容');return}try{const canvas=document.createElement('canvas');let w,h;if(media.tagName==='VIDEO'){w=media.videoWidth||media.clientWidth;h=media.videoHeight||media.clientHeight}else{w=media.naturalWidth||media.clientWidth;h=media.naturalHeight||media.clientHeight}if(!w||!h){say('无法截图');return}canvas.width=w;canvas.height=h;canvas.getContext('2d').drawImage(media,0,0,w,h);const b64=(canvas.toDataURL('image/png').split(',')[1]||'');if(!b64){say('截图失败');return}const f=files[cur];const stem=stemName(f&&f.name);let timeLabel='';if(media.tagName==='VIDEO')timeLabel=fmtTimeCn(media.currentTime||0);const filename=timeLabel?(stem+'_'+timeLabel):stem;const res=await api('screenshot','POST',{data:b64,filename},'application/json');say('已保存：'+(res.path||'Screenshots'))}catch(e){say(e.message||'截图失败',5000)}}
+async function takeScreenshot(){const media=stage.querySelector('video, img');if(!media){say('没有可截图的内容');return}try{const canvas=document.createElement('canvas');let w,h;if(media.tagName==='VIDEO'){w=media.videoWidth||media.clientWidth;h=media.videoHeight||media.clientHeight}else{w=media.naturalWidth||media.clientWidth;h=media.naturalHeight||media.clientHeight}if(!w||!h){say('无法截图');return}canvas.width=w;canvas.height=h;canvas.getContext('2d').drawImage(media,0,0,w,h);const b64=(canvas.toDataURL('image/png').split(',')[1]||'');if(!b64){say('截图失败');return}const f=files[cur];const stem=stemName(f&&f.name);let timeLabel='';if(media.tagName==='VIDEO')timeLabel=fmtTimeMmss(media.currentTime||0);const filename=timeLabel?(stem+'_'+timeLabel):stem;const res=await api('screenshot','POST',{data:b64,filename},'application/json');say('已保存：'+(res.path||'Screenshots'))}catch(e){say(e.message||'截图失败',5000)}}
 function openSettings(){$('appVersion').textContent=APP_VERSION;$('settingsPanel').hidden=false}
 function closeSettings(){$('settingsPanel').hidden=true}
 $('vplay').onclick=e=>{e.stopPropagation();togglePlay()};
@@ -156,6 +165,15 @@ $('openBtn').onclick=openDialog;$('openMain').onclick=openDialog;$('delBtn').onc
 $('settingsBtn').onclick=openSettings;$('settingsClose').onclick=closeSettings;
 $('settingsPanel').onclick=e=>{if(e.target===$('settingsPanel'))closeSettings()};
 stage.addEventListener('dblclick',e=>toggleFullscreen());
+const ctxMenu=$('ctxMenu');
+function hideCtx(){ctxMenu.classList.remove('show')}
+function showCtx(x,y){const fs=!!document.fullscreenElement;$('ctxFs').textContent=fs?'退出全屏':'全屏';ctxMenu.style.left=Math.min(x,window.innerWidth-180)+'px';ctxMenu.style.top=Math.min(y,window.innerHeight-120)+'px';ctxMenu.classList.add('show')}
+stage.addEventListener('contextmenu',e=>{const v=e.target.closest&&e.target.closest('video');if(!v){hideCtx();return}e.preventDefault();e.stopPropagation();showCtx(e.clientX,e.clientY)});
+addEventListener('click',hideCtx);
+addEventListener('blur',hideCtx);
+$('ctxFs').onclick=e=>{e.stopPropagation();hideCtx();toggleFullscreen()};
+$('ctxFrame').onclick=e=>{e.stopPropagation();hideCtx();takeScreenshot()};
+$('ctxReveal').onclick=async e=>{e.stopPropagation();hideCtx();if(!files.length){say('没有打开的文件');return}try{await api('reveal?i='+cur,'POST')}catch(err){say(err.message||'无法打开所在位置',5000)}};
 let idleTimer;const wake=()=>{if(document.body.classList.contains('empty'))return;document.body.classList.remove('idle');clearTimeout(idleTimer);idleTimer=setTimeout(()=>document.body.classList.add('idle'),2500)};
 addEventListener('mousemove',wake);addEventListener('keydown',wake);wake();
 updatePlayModeBtn();$('vplayIcon').innerHTML=ICON.play;$('vmuteIcon').innerHTML=ICON.vol;
