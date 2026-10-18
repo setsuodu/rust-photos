@@ -183,17 +183,16 @@ fn unregister_associations() -> Result<(), String> {
 #[cfg(windows)]
 fn dunce_path(p: &Path) -> String {
     let s = p.to_string_lossy();
-    // \\?\\UNC\\server\\share\\file -> \\server\\share\\file
-    // \\?\\C:\\path -> C:\\path
-    // 错误地只 strip \\?\\ 会把 UNC 路径变成无效的 "UNC\\server\\..."
-    let s = if let Some(rest) = s.strip_prefix(r#"\\?\\UNC\\"#) {
-        format!(r#"\\{}"# , rest)
-    } else if let Some(rest) = s.strip_prefix(r#"\\?\\"#) {
+    // Network: \\\\?\\UNC\\server\\share -> \\\\server\\share
+    // Local:   \\\\?\\C:\\path -> C:\\path
+    let s = if let Some(rest) = s.strip_prefix("\\\\\\\\?\\\\UNC\\\\") {
+        format!("\\\\\\\\{}", rest)
+    } else if let Some(rest) = s.strip_prefix("\\\\\\\\?\\\\") {
         rest.to_string()
     } else {
         s.into_owned()
     };
-    s.replace('/', r#"\\"#)
+    s.replace('/', "\\\\")
 }
 
 #[cfg(windows)]
@@ -261,7 +260,7 @@ fn reveal_in_explorer(path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // 网络盘 canonicalize 会变成 \\?\\UNC\\...，必须用 dunce_path 正确还原
+        // NAS / 映射盘 canonicalize 后是 \\\\?\\UNC\\...，dunce_path 必须正确还原
         let display = match fs::canonicalize(path) {
             Ok(abs) => dunce_path(&abs),
             Err(_) => dunce_path(path),
