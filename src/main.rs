@@ -181,7 +181,8 @@ fn unregister_associations() -> Result<(), String> {
 #[cfg(windows)]
 fn dunce_path(p: &Path) -> String {
     let s = p.to_string_lossy();
-    let s = s.strip_prefix(r"\\?\\").unwrap_or(&s);
+    // strip \\?\ prefix from canonicalize
+    let s = s.strip_prefix("\\\\?\\").unwrap_or(&s);
     s.replace('/', "\\")
 }
 
@@ -249,9 +250,17 @@ fn decode_base64(input: &str) -> Option<Vec<u8>> {
 fn reveal_in_explorer(path: &Path) -> Result<(), String> {
     #[cfg(windows)]
     {
-        let path = dunce_path(path);
-        let _ = std::process::Command::new("explorer")
-            .arg(format!("/select,{path}"))
+        use std::os::windows::process::CommandExt;
+        let abs = fs::canonicalize(path).map_err(|e| format!("无法解析路径：{e}"))?;
+        let path = dunce_path(&abs);
+        if !Path::new(&path).is_file() {
+            return Err(format!("文件不存在：{path}"));
+        }
+        // explorer 需要: /select,"C:\\path\\file.ext"
+        // .arg("/select,path") 解析失败时会打开「文档」
+        let arg = format!("/select,\"{path}\"");
+        std::process::Command::new("explorer.exe")
+            .raw_arg(arg)
             .spawn()
             .map_err(|e| format!("无法打开资源管理器：{e}"))?;
         Ok(())
