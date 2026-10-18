@@ -246,6 +246,23 @@ fn decode_base64(input: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+fn reveal_in_explorer(path: &Path) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let path = dunce_path(path);
+        let _ = std::process::Command::new("explorer")
+            .arg(format!("/select,{path}"))
+            .spawn()
+            .map_err(|e| format!("无法打开资源管理器：{e}"))?;
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err("仅支持 Windows".into())
+    }
+}
+
 fn hdr(name: &str, value: &str) -> Header {
     Header::from_bytes(name.as_bytes(), value.as_bytes()).unwrap()
 }
@@ -424,6 +441,25 @@ fn handle(mut req: Request, token: &str, state: &Mutex<State>) {
             match fs::write(&path, &png) {
                 Ok(()) => respond_json(req, 200, serde_json::json!({ "path": path.to_string_lossy() }).to_string()),
                 Err(e) => respond_json(req, 500, serde_json::json!({ "error": format!("保存失败：{e}") }).to_string()),
+            }
+        }
+        (Method::Post, r) if r.starts_with("reveal") => {
+            let i = query_param(query, "i")
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or_else(|| state.lock().unwrap().current);
+            let path = {
+                let s = state.lock().unwrap();
+                s.files.get(i).cloned()
+            };
+            match path {
+                Some(p) => {
+                    if let Err(e) = reveal_in_explorer(&p) {
+                        respond_json(req, 500, serde_json::json!({ "error": e }).to_string());
+                    } else {
+                        respond_json(req, 200, serde_json::json!({ "ok": true }).to_string());
+                    }
+                }
+                None => respond_json(req, 404, serde_json::json!({ "error": "文件不存在" }).to_string()),
             }
         }
         _ => respond_status(req, 404),
