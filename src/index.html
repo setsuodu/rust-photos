@@ -58,6 +58,26 @@ body.empty .bar,body.empty .nav,body.empty #vbar{opacity:0;pointer-events:none}
 #ctxMenu.show{display:block}
 #ctxMenu button{display:block;width:100%;text-align:left;background:transparent;border:0;color:#fff;font:inherit;font-size:13px;padding:8px 16px;cursor:pointer}
 #ctxMenu button:hover{background:rgba(255,255,255,.12)}
+#editBtn[disabled]{opacity:.35;pointer-events:none}
+#editPanel{position:absolute;inset:0;z-index:21;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
+#editPanel[hidden]{display:none}
+.edit-card{background:#2a2a2a;border-radius:12px;padding:20px 24px;width:min(440px,92vw);max-height:85vh;overflow:auto;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.edit-title{font-size:15px;margin-bottom:6px;opacity:.95}
+.edit-hint{font-size:12px;opacity:.55;margin-bottom:14px;line-height:1.5}
+.edit-block{border-top:1px solid rgba(255,255,255,.08);padding:12px 0}
+.edit-block h4{font-size:13px;font-weight:600;margin-bottom:8px;opacity:.9}
+.edit-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.edit-row label{font-size:12px;opacity:.7;min-width:52px}
+.edit-row input,.edit-row select{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);color:#fff;border-radius:6px;padding:6px 10px;font:inherit;font-size:13px;width:100px}
+.edit-row input:focus,.edit-row select:focus{outline:1px solid #4fc3f7}
+.edit-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.edit-actions .btn{font-size:12px}
+.edit-actions .btn.primary{background:#2b88d8}
+.edit-actions .btn.primary:hover{background:#3a97e6}
+.edit-actions .btn:disabled{opacity:.35;pointer-events:none}
+#ffmpegWarn{background:rgba(180,80,40,.25);border:1px solid rgba(255,140,60,.35);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:12px;color:#ffcc99}
+#ffmpegWarn[hidden]{display:none}
+#ffmpegWarn a{color:#7ec8ff}
 </style>
 </head>
 <body class="empty">
@@ -67,6 +87,7 @@ body.empty .bar,body.empty .nav,body.empty #vbar{opacity:0;pointer-events:none}
 <div id="counter"></div>
 <button class="btn" id="openBtn" title="Ctrl+O">打开…</button>
 <button class="btn" id="delBtn" title="Delete">删除</button>
+<button class="btn" id="editBtn" title="视频编辑（需 ffmpeg）" hidden>编辑</button>
 <button class="btn btn-icon" id="settingsBtn" title="设置" aria-label="设置">
 <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
 </button>
@@ -101,8 +122,50 @@ body.empty .bar,body.empty .nav,body.empty #vbar{opacity:0;pointer-events:none}
 <div class="settings-row"><span>退出全屏 / 关闭设置</span><span class="key">Esc</span></div>
 <div class="settings-row"><span>退出软件</span><span class="key">Esc</span></div>
 <div class="settings-row"><span>截图（名称_mmss）</span><span class="key">F5</span></div>
+<div class="settings-row"><span>视频编辑</span><span class="key">顶栏「编辑」</span></div>
 <div class="settings-row"><span>切换播放模式</span><span class="key">底栏图标</span></div>
 <div class="settings-actions"><button class="btn" id="settingsClose">关闭</button></div>
+</div>
+</div>
+<div id="editPanel" hidden>
+<div class="edit-card" role="dialog" aria-label="视频编辑">
+<div class="edit-title">视频编辑</div>
+<div class="edit-hint">基于本机 ffmpeg（与 ImageStudio 相同能力）。输出保存在原文件同目录，不覆盖原文件。</div>
+<div id="ffmpegWarn" hidden>未检测到 ffmpeg，相关功能不可用。请安装并加入 PATH 后重启本软件。<br><a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg.org/download</a> · Windows 可用 <a href="https://www.gyan.dev/ffmpeg/builds/" target="_blank" rel="noopener">gyan.dev builds</a></div>
+<div class="edit-block">
+<h4>视频裁剪（时间）</h4>
+<div class="edit-row"><label>起点</label><input type="number" id="trimStart" min="0" step="0.1" value="0"><span style="opacity:.5;font-size:12px">秒</span>
+<button type="button" class="btn" id="trimUseCurStart" style="padding:4px 8px;font-size:12px">用当前时间</button></div>
+<div class="edit-row"><label>终点</label><input type="number" id="trimEnd" min="0" step="0.1" value=""><span style="opacity:.5;font-size:12px">秒（空=到结尾）</span>
+<button type="button" class="btn" id="trimUseCurEnd" style="padding:4px 8px;font-size:12px">用当前时间</button></div>
+<div class="edit-actions"><button type="button" class="btn primary" id="runTrim">裁剪</button></div>
+</div>
+<div class="edit-block">
+<h4>修改码率</h4>
+<div class="edit-row"><label>码率</label><input type="number" id="bitrateKbps" min="100" max="50000" step="100" value="3000"><span style="opacity:.5;font-size:12px">kbps（输出 MP4）</span></div>
+<div class="edit-actions"><button type="button" class="btn primary" id="runBitrate">改码率</button></div>
+</div>
+<div class="edit-block">
+<h4>水平等分</h4>
+<div class="edit-row"><label>输出</label>
+<select id="splitSide"><option value="both">左右各一份</option><option value="left">仅左半</option><option value="right">仅右半</option></select>
+</div>
+<div class="edit-actions"><button type="button" class="btn primary" id="runSplit">切割</button></div>
+</div>
+<div class="edit-block">
+<h4>缩放比例</h4>
+<div class="edit-row"><label>比例</label>
+<select id="scaleRatio">
+<option value="0.25">25%</option>
+<option value="0.5" selected>50%</option>
+<option value="0.75">75%</option>
+<option value="1.5">150%</option>
+<option value="2">200%</option>
+</select>
+</div>
+<div class="edit-actions"><button type="button" class="btn primary" id="runScale">缩放</button></div>
+</div>
+<div class="settings-actions"><button class="btn" id="editClose">关闭</button></div>
 </div>
 </div>
 <div id="ctxMenu" role="menu">
@@ -138,7 +201,7 @@ function updatePlayModeBtn(){const m=PLAY_MODES[playMode];$('playModeBtn').title
 function cyclePlayMode(){playMode=(playMode+1)%PLAY_MODES.length;updatePlayModeBtn()}
 function syncSeek(){if(seeking)return;const v=currentVideo();if(!v||!v.duration)return;$('vseek').value=Math.round((v.currentTime/v.duration)*1000);$('vtime').textContent=fmtTime(v.currentTime)+' / '+fmtTime(v.duration)}
 function bindVideo(el){el.addEventListener('timeupdate',syncSeek);el.addEventListener('durationchange',syncSeek);el.addEventListener('play',updatePlayIcon);el.addEventListener('pause',updatePlayIcon);el.addEventListener('volumechange',updateMuteIcon);el.addEventListener('ended',()=>{updatePlayIcon();const mode=PLAY_MODES[playMode].id;if(mode==='loop'){el.currentTime=0;el.play().catch(()=>{})}else if(mode==='auto'){if(cur<files.length-1)go(1)}});updatePlayIcon();updateMuteIcon();updatePlayModeBtn();syncSeek()}
-function render(){const seq=++renderSeq;clearStage();toast.hidden=true;if(!files.length){document.body.classList.add('empty');msg.hidden=false;nameEl.textContent='';counterEl.textContent='';prevBtn.disabled=nextBtn.disabled=true;$('vbar').hidden=true;setTitle('照片');return}document.body.classList.remove('empty');msg.hidden=true;const f=files[cur];if(!f)return;const src=mediaUrl(cur);let el;if(f.kind==='video'){el=document.createElement('video');el.controls=false;el.autoplay=true;el.preload='auto';el.playsInline=true;el.loop=PLAY_MODES[playMode].id==='loop';el.onerror=()=>{if(seq===renderSeq)say('无法播放此视频（格式或编码不受系统解码器支持）',6000)}}else{el=document.createElement('img');el.draggable=false;el.onerror=()=>{if(seq===renderSeq)say('无法显示此图片')}}el.src=src;if(seq!==renderSeq)return;stage.appendChild(el);nameEl.textContent=f.name;counterEl.textContent=(cur+1)+' / '+files.length;prevBtn.disabled=cur===0;nextBtn.disabled=cur===files.length-1;setTitle(f.name+' - 照片');$('vbar').hidden=f.kind!=='video';if(f.kind==='video')bindVideo(el);const nx=files[cur+1];if(nx&&nx.kind==='image'){const pre=new Image();pre.src=mediaUrl(cur+1)}}
+function render(){const seq=++renderSeq;clearStage();toast.hidden=true;if(!files.length){document.body.classList.add('empty');msg.hidden=false;nameEl.textContent='';counterEl.textContent='';prevBtn.disabled=nextBtn.disabled=true;$('vbar').hidden=true;$('editBtn').hidden=true;setTitle('照片');return}document.body.classList.remove('empty');msg.hidden=true;const f=files[cur];if(!f)return;const src=mediaUrl(cur);let el;if(f.kind==='video'){el=document.createElement('video');el.controls=false;el.autoplay=true;el.preload='auto';el.playsInline=true;el.loop=PLAY_MODES[playMode].id==='loop';el.onerror=()=>{if(seq===renderSeq)say('无法播放此视频（格式或编码不受系统解码器支持）',6000)}}else{el=document.createElement('img');el.draggable=false;el.onerror=()=>{if(seq===renderSeq)say('无法显示此图片')}}el.src=src;if(seq!==renderSeq)return;stage.appendChild(el);nameEl.textContent=f.name;counterEl.textContent=(cur+1)+' / '+files.length;prevBtn.disabled=cur===0;nextBtn.disabled=cur===files.length-1;setTitle(f.name+' - 照片');$('vbar').hidden=f.kind!=='video';$('editBtn').hidden=f.kind!=='video';if(f.kind==='video')bindVideo(el);const nx=files[cur+1];if(nx&&nx.kind==='image'){const pre=new Image();pre.src=mediaUrl(cur+1)}}
 function go(delta){if(!files.length||busy)return;const n=Math.min(Math.max(cur+delta,0),files.length-1);if(n!==cur){cur=n;render()}}
 async function del(){if(!files.length||busy)return;busy=true;const delIndex=cur;const name=files[delIndex].name;files.splice(delIndex,1);if(cur>=files.length)cur=Math.max(0,files.length-1);mediaRev++;clearStage();render();try{const s=await api('delete?i='+delIndex,'POST');files=s.files||[];cur=files.length?Math.min(s.current|0,files.length-1):0;mediaRev++;render();say('已将「'+name+'」移到回收站')}catch(e){try{apply(await api('state'))}catch(_){render()}say(e.message,5000)}busy=false}
 async function openDialog(){if(busy)return;busy=true;try{apply(await api('open','POST'))}catch(e){say(e.message)}busy=false}
@@ -149,6 +212,18 @@ function toggleFullscreen(){isNativeFs=!isNativeFs;try{window.ipc.postMessage(is
 async function takeScreenshot(){const media=stage.querySelector('video, img');if(!media){say('没有可截图的内容');return}try{const canvas=document.createElement('canvas');let w,h;if(media.tagName==='VIDEO'){w=media.videoWidth||media.clientWidth;h=media.videoHeight||media.clientHeight}else{w=media.naturalWidth||media.clientWidth;h=media.naturalHeight||media.clientHeight}if(!w||!h){say('无法截图');return}canvas.width=w;canvas.height=h;canvas.getContext('2d').drawImage(media,0,0,w,h);const b64=(canvas.toDataURL('image/png').split(',')[1]||'');if(!b64){say('截图失败');return}const f=files[cur];const stem=stemName(f&&f.name);let timeLabel='';if(media.tagName==='VIDEO')timeLabel=fmtTimeMmss(media.currentTime||0);const filename=timeLabel?(stem+'_'+timeLabel):stem;const res=await api('screenshot','POST',{data:b64,filename},'application/json');say('已保存：'+(res.path||'Screenshots'))}catch(e){say(e.message||'截图失败',5000)}}
 function openSettings(){$('appVersion').textContent=APP_VERSION;$('settingsPanel').hidden=false}
 function closeSettings(){$('settingsPanel').hidden=true}
+let ffmpegOk=false;
+async function refreshFfmpeg(){try{const s=await api('ffmpeg-status');ffmpegOk=!!s.available}catch(_){ffmpegOk=false}const warn=$('ffmpegWarn');if(warn)warn.hidden=ffmpegOk;['runTrim','runBitrate','runSplit','runScale'].forEach(id=>{const b=$(id);if(b)b.disabled=!ffmpegOk})}
+function openEdit(){if(!files.length||files[cur].kind!=='video'){say('请先打开视频');return}const v=currentVideo();if(v&&isFinite(v.duration))$('trimEnd').placeholder=String(Math.floor(v.duration));refreshFfmpeg().then(()=>{$('editPanel').hidden=false})}
+function closeEdit(){$('editPanel').hidden=true}
+async function runEdit(path,body){if(!ffmpegOk){say('未安装 ffmpeg，无法编辑');return}say('正在处理，请稍候…',60000);try{const res=await api(path,'POST',Object.assign({i:cur},body||{}));const p=res.path||(res.paths&&res.paths[0])||'';const extra=(res.paths&&res.paths.length>1)?(' 等 '+res.paths.length+' 个文件'):'';say('已保存：'+p+extra,8000)}catch(e){say(e.message||'编辑失败',6000)}}
+$('editBtn').onclick=openEdit;$('editClose').onclick=closeEdit;$('editPanel').onclick=e=>{if(e.target===$('editPanel'))closeEdit()};
+$('trimUseCurStart').onclick=()=>{const v=currentVideo();if(v)$('trimStart').value=(v.currentTime||0).toFixed(1)};
+$('trimUseCurEnd').onclick=()=>{const v=currentVideo();if(v)$('trimEnd').value=(v.currentTime||0).toFixed(1)};
+$('runTrim').onclick=()=>{const start=parseFloat($('trimStart').value)||0;const endRaw=$('trimEnd').value;const body={start};if(endRaw!==''&&endRaw!=null){const end=parseFloat(endRaw);if(isFinite(end))body.end=end}runEdit('edit/trim',body)};
+$('runBitrate').onclick=()=>runEdit('edit/bitrate',{bitrate:parseInt($('bitrateKbps').value,10)||3000});
+$('runSplit').onclick=()=>runEdit('edit/split',{side:$('splitSide').value||'both'});
+$('runScale').onclick=()=>runEdit('edit/scale',{ratio:parseFloat($('scaleRatio').value)||0.5});
 $('vplay').onclick=e=>{e.stopPropagation();togglePlay()};
 $('vmute').onclick=e=>{e.stopPropagation();toggleMute()};
 $('playModeBtn').onclick=e=>{e.stopPropagation();cyclePlayMode()};
@@ -159,7 +234,7 @@ $('vseek').addEventListener('pointerup',()=>{seeking=false});
 $('vseek').addEventListener('input',()=>{const v=currentVideo();if(!v||!v.duration)return;const t=($('vseek').value/1000)*v.duration;$('vtime').textContent=fmtTime(t)+' / '+fmtTime(v.duration)});
 $('vseek').addEventListener('change',()=>{const v=currentVideo();if(!v||!v.duration)return;v.currentTime=($('vseek').value/1000)*v.duration;seeking=false});
 stage.addEventListener('click',e=>{if(e.target.tagName==='VIDEO')togglePlay()});
-addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='o'){e.preventDefault();openDialog();return}if(e.key==='Escape'){e.preventDefault();if(!$('settingsPanel').hidden){closeSettings();return}if(isNativeFs){isNativeFs=false;try{window.ipc.postMessage('fullscreen-off')}catch(_){}return}quitApp();return}if(e.key==='F5'){e.preventDefault();takeScreenshot();return}if(e.ctrlKey||e.altKey||e.metaKey)return;switch(e.key){case'ArrowLeft':case'PageUp':go(-1);break;case'ArrowRight':case'PageDown':go(1);break;case'Home':if(files.length){cur=0;render()}break;case'End':if(files.length){cur=files.length-1;render()}break;case'Delete':del();break;case' ':togglePlay();break;case'f':case'F':case'F11':toggleFullscreen();break;case'm':case'M':toggleMute();break;default:return}e.preventDefault();e.stopPropagation()},true);
+addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='o'){e.preventDefault();openDialog();return}if(e.key==='Escape'){e.preventDefault();if(!$('settingsPanel').hidden){closeSettings();return}if(!$('editPanel').hidden){closeEdit();return}if(isNativeFs){isNativeFs=false;try{window.ipc.postMessage('fullscreen-off')}catch(_){}return}quitApp();return}if(e.key==='F5'){e.preventDefault();takeScreenshot();return}if(e.ctrlKey||e.altKey||e.metaKey)return;switch(e.key){case'ArrowLeft':case'PageUp':go(-1);break;case'ArrowRight':case'PageDown':go(1);break;case'Home':if(files.length){cur=0;render()}break;case'End':if(files.length){cur=files.length-1;render()}break;case'Delete':del();break;case' ':togglePlay();break;case'f':case'F':case'F11':toggleFullscreen();break;case'm':case'M':toggleMute();break;default:return}e.preventDefault();e.stopPropagation()},true);
 addEventListener('wheel',e=>{if(e.ctrlKey)return;go(e.deltaY>0?1:-1)},{passive:true});
 prevBtn.onclick=()=>go(-1);nextBtn.onclick=()=>go(1);
 $('openBtn').onclick=openDialog;$('openMain').onclick=openDialog;$('delBtn').onclick=del;
