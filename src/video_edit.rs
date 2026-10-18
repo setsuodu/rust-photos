@@ -167,21 +167,80 @@ pub fn split_h(src: &Path, side: &str) -> Result<Vec<PathBuf>, String> {
     Ok(outs)
 }
 
-/// Scale ratio 0.05..=4.0
-pub fn scale(src: &Path, ratio: f64) -> Result<PathBuf, String> {
+/// Change aspect ratio (ImageStudio ChangeAspect)
+/// ratio: "16:9" / "9:16" / "1:1" ...
+/// mode: stretch | crop | pad
+pub fn change_aspect(src: &Path, ratio: &str, mode: &str) -> Result<PathBuf, String> {
     require()?;
-    let ratio = ratio.clamp(0.05, 4.0);
-    let pct = (ratio * 100.0).round() as i64;
-    let out = sibling(src, &format!("{pct}pct"), None);
-    let vf = format!("scale=trunc(iw*{ratio}/2)*2:trunc(ih*{ratio}/2)*2");
+    let ratio = ratio.trim().replace('：', ":");
+    let mode = mode.trim().to_ascii_lowercase();
+    let mode = if mode == "scale" {
+        "stretch".to_string()
+    } else {
+        mode
+    };
+    if mode != "stretch" && mode != "crop" && mode != "pad" {
+        return Err("mode 仅支持 stretch / crop / pad".into());
+    }
+    let parts: Vec<&str> = ratio
+        .split(|c| c == ':' || c == '/' || c == 'x' || c == 'X' || c == '*')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if parts.len() != 2 {
+        return Err(format!("无效比例: {ratio}，示例 16:9 / 4:3 / 9:16"));
+    }
+    let rw: f64 = parts[0]
+        .parse()
+        .map_err(|_| format!("无效比例: {ratio}"))?;
+    let rh: f64 = parts[1]
+        .parse()
+        .map_err(|_| format!("无效比例: {ratio}"))?;
+    if rw <= 0.0 || rh <= 0.0 {
+        return Err(format!("无效比例: {ratio}"));
+    }
+    let tar = rw / rh;
+    let inv = rh / rw;
+    let label = ratio.replace(':', "x");
+    let out = sibling(src, &format!("{label}_{mode}"), Some("mp4"));
+
+    let vf = match mode.as_str() {
+        "crop" => format!(
+            "scale=iw*sar:ih,setsar=1,\
+crop=min(iw\\,ih*{tar}):min(ih\\,iw*{inv}):(iw-ow)/2:(ih-oh)/2,\
+scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1"
+        ),
+        "pad" => format!(
+            "scale=iw*sar:ih,setsar=1,\
+pad=max(iw\\,ih*{tar}):max(ih\\,iw*{inv}):(ow-iw)/2:(oh-ih)/2:black,\
+scale=trunc(iw/2)*2:trunc(ih/2)*2,setsar=1"
+        ),
+        _ => format!(
+            "scale=iw*sar:ih,setsar=1,\
+scale=trunc(if(lte({tar}\\,1)\\,max(iw\\,ih)*{tar}\\,max(iw\\,ih))/2)*2:\
+trunc(if(lte({tar}\\,1)\\,max(iw\\,ih)\\,max(iw\\,ih)*{inv})/2)*2,\
+setsar=1"
+        ),
+    };
+
     let args = vec![
         "-y".into(),
         "-i".into(),
         path_str(src),
         "-vf".into(),
         vf,
+        "-c:v".into(),
+        "libx264".into(),
+        "-preset".into(),
+        "fast".into(),
+        "-crf".into(),
+        "18".into(),
         "-c:a".into(),
-        "copy".into(),
+        "aac".into(),
+        "-b:a".into(),
+        "192k".into(),
+        "-movflags".into(),
+        "+faststart".into(),
         path_str(&out),
     ];
     run(&args)?;
