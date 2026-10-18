@@ -1,1 +1,4 @@
-PLACEHOLDER_READ_FROM_FILE
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+// TEMPORARY - will replace with full content
+fn main() { println!("restore"); }
