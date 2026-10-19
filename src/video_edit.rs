@@ -13,18 +13,23 @@ fn path_str(p: &Path) -> String {
     p.to_string_lossy().into_owned()
 }
 
+/// 缓存检测结果，避免每次打开编辑面板都 spawn ffmpeg（首次仍可能稍慢）
 pub fn available() -> bool {
-    let mut cmd = Command::new("ffmpeg");
-    cmd.arg("-version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
-    cmd.status().map(|s| s.success()).unwrap_or(false)
+    use std::sync::OnceLock;
+    static CACHED: OnceLock<bool> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let mut cmd = Command::new("ffmpeg");
+        cmd.arg("-version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        cmd.status().map(|s| s.success()).unwrap_or(false)
+    })
 }
 
 fn run(args: &[String]) -> Result<(), String> {
