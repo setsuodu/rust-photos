@@ -588,6 +588,39 @@ fn show_console_message(msg: &str) {
     { eprintln!("{msg}"); }
 }
 
+/// 标题栏/边框与页面背景 #1c1c1c 一致（Windows 11 CAPTION_COLOR；Win10 至少暗色标题栏）
+#[cfg(windows)]
+fn apply_window_chrome(window: &tao::window::Window) {
+    use tao::platform::windows::WindowExtWindows;
+    let hwnd = window.hwnd();
+    // COLORREF = 0x00BBGGRR
+    const BG: u32 = 0x00_1C_1C_1C;
+    const FG: u32 = 0x00_FF_FF_FF;
+    unsafe {
+        #[link(name = "dwmapi")]
+        extern "system" {
+            fn DwmSetWindowAttribute(
+                hwnd: isize,
+                attr: u32,
+                value: *const std::ffi::c_void,
+                size: u32,
+            ) -> i32;
+        }
+        const DWMWA_USE_IMMERSIVE_DARK_MODE: u32 = 20;
+        const DWMWA_BORDER_COLOR: u32 = 34;
+        const DWMWA_CAPTION_COLOR: u32 = 35;
+        const DWMWA_TEXT_COLOR: u32 = 36;
+        let dark: u32 = 1;
+        let _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &dark as *const _ as _, 4);
+        let _ = DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, &BG as *const _ as _, 4);
+        let _ = DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, &BG as *const _ as _, 4);
+        let _ = DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, &FG as *const _ as _, 4);
+    }
+}
+
+#[cfg(not(windows))]
+fn apply_window_chrome(_window: &tao::window::Window) {}
+
 fn main() {
     let mut args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     if let Some(first) = args.first().and_then(|a| a.to_str()) {
@@ -633,15 +666,18 @@ fn main() {
     let proxy = event_loop.create_proxy();
     let mut wb = WindowBuilder::new()
         .with_title("照片")
-        .with_inner_size(LogicalSize::new(1200.0, 800.0));
+        .with_inner_size(LogicalSize::new(1200.0, 800.0))
+        .with_theme(Some(tao::window::Theme::Dark));
     if let Some(icon) = load_window_icon() {
         wb = wb.with_window_icon(Some(icon));
     }
     let window = wb.build(&event_loop).expect("无法创建窗口");
+    apply_window_chrome(&window);
     let data_dir = std::env::var_os("LOCALAPPDATA")
         .map(|p| PathBuf::from(p).join("rust-photos").join("webview2"));
     let mut web_context = wry::WebContext::new(data_dir);
     let builder = WebViewBuilder::new_with_web_context(&mut web_context)
+        .with_background_color((0x1c, 0x1c, 0x1c, 255))
         .with_url(format!("http://127.0.0.1:{port}/{token}/"))
         .with_ipc_handler(move |req| {
             let body = req.body();
