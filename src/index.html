@@ -80,6 +80,12 @@ body.empty .bar,body.empty .nav,body.empty #vbar{opacity:0;pointer-events:none}
 #ffmpegWarn{background:rgba(180,80,40,.25);border:1px solid rgba(255,140,60,.35);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:12px;color:#ffcc99}
 #ffmpegWarn[hidden]{display:none}
 #ffmpegWarn a{color:#7ec8ff}
+.edit-card{position:relative}
+#editBusy{position:absolute;inset:0;z-index:5;background:rgba(30,30,30,.82);border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+#editBusy[hidden]{display:none}
+.edit-spinner{width:36px;height:36px;border:3px solid rgba(255,255,255,.2);border-top-color:#4fc3f7;border-radius:50%;animation:editspin .8s linear infinite}
+@keyframes editspin{to{transform:rotate(360deg)}}
+#editBusyText{font-size:13px;opacity:.9}
 </style>
 </head>
 <body class="empty">
@@ -132,6 +138,10 @@ body.empty .bar,body.empty .nav,body.empty #vbar{opacity:0;pointer-events:none}
 <div id="editPanel" hidden>
 <div class="edit-card" role="dialog" aria-label="视频编辑">
 <div class="edit-title">视频编辑</div>
+<div id="editBusy" hidden>
+<div class="edit-spinner" aria-hidden="true"></div>
+<div id="editBusyText">正在处理…</div>
+</div>
 <div class="edit-hint">基于本机 ffmpeg（与 ImageStudio 相同能力）。输出保存在原文件同目录，不覆盖原文件。</div>
 <div id="ffmpegWarn" hidden>未检测到 ffmpeg，相关功能不可用。请安装并加入 PATH 后重启本软件。<br><a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener">ffmpeg.org/download</a> · Windows 可用 <a href="https://www.gyan.dev/ffmpeg/builds/" target="_blank" rel="noopener">gyan.dev builds</a></div>
 <div class="edit-block">
@@ -228,12 +238,37 @@ async function takeScreenshot(){const media=stage.querySelector('video, img');if
 function openSettings(){$('appVersion').textContent=APP_VERSION;$('settingsPanel').hidden=false}
 function closeSettings(){$('settingsPanel').hidden=true}
 let ffmpegOk=false,ffmpegChecked=false,ffmpegChecking=null;
-function applyFfmpegUi(){const warn=$('ffmpegWarn');if(warn)warn.hidden=ffmpegOk;['runTrim','runBitrate','runSplit','runAspect'].forEach(id=>{const b=$(id);if(b)b.disabled=!ffmpegOk})}
+function applyFfmpegUi(){const warn=$('ffmpegWarn');if(warn)warn.hidden=ffmpegOk;['runTrim','runBitrate','runSplit','runAspect'].forEach(id=>{const b=$(id);if(b)b.disabled=!ffmpegOk||editBusy})}
 async function refreshFfmpeg(force){if(ffmpegChecked&&!force){applyFfmpegUi();return ffmpegOk}if(ffmpegChecking)return ffmpegChecking;ffmpegChecking=(async()=>{try{const s=await api('ffmpeg-status');ffmpegOk=!!s.available}catch(_){ffmpegOk=false}ffmpegChecked=true;ffmpegChecking=null;applyFfmpegUi();return ffmpegOk})();return ffmpegChecking}
 function openEdit(){if(!files.length||files[cur].kind!=='video'){say('请先打开视频');return}const v=currentVideo();if(v&&isFinite(v.duration))$('trimEnd').placeholder=String(Math.floor(v.duration));applyFfmpegUi();$('editPanel').hidden=false;refreshFfmpeg()}
 function closeEdit(){$('editPanel').hidden=true}
-async function runEdit(path,body){if(!ffmpegOk){say('未安装 ffmpeg，无法编辑');return}say('正在处理，请稍候…',60000);try{const res=await api(path,'POST',Object.assign({i:cur},body||{}));const p=res.path||(res.paths&&res.paths[0])||'';const extra=(res.paths&&res.paths.length>1)?(' 等 '+res.paths.length+' 个文件'):'';say('已保存：'+p+extra,8000)}catch(e){say(e.message||'编辑失败',6000)}}
-$('editBtn').onclick=openEdit;$('editClose').onclick=closeEdit;$('editPanel').onclick=e=>{if(e.target===$('editPanel'))closeEdit()};
+let editBusy=false;
+function setEditBusy(on,text){
+  editBusy=!!on;
+  const ov=$('editBusy');
+  if(ov){ov.hidden=!on;if(text)$('editBusyText').textContent=text}
+  ['runTrim','runBitrate','runSplit','runAspect'].forEach(id=>{
+    const b=$(id);if(b)b.disabled=on||!ffmpegOk
+  });
+  if(!on)applyFfmpegUi();
+}
+async function runEdit(path,body){
+  if(!ffmpegOk){say('未安装 ffmpeg，无法编辑');return}
+  if(editBusy){say('正在处理中，请稍候…');return}
+  setEditBusy(true,'正在处理，请稍候…');
+  say('正在处理，请稍候…',60000);
+  try{
+    const res=await api(path,'POST',Object.assign({i:cur},body||{}));
+    const p=res.path||(res.paths&&res.paths[0])||'';
+    const extra=(res.paths&&res.paths.length>1)?(' 等 '+res.paths.length+' 个文件'):'';
+    say('已保存：'+p+extra,8000);
+  }catch(e){
+    say(e.message||'编辑失败',6000);
+  }finally{
+    setEditBusy(false);
+  }
+}
+$('editBtn').onclick=openEdit;$('editClose').onclick=()=>{if(editBusy){say('仍在后台处理…');}closeEdit()};$('editPanel').onclick=e=>{if(e.target===$('editPanel')){if(editBusy)say('仍在后台处理…');closeEdit()}};
 $('trimUseCurStart').onclick=()=>{const v=currentVideo();if(v)$('trimStart').value=(v.currentTime||0).toFixed(1)};
 $('trimUseCurEnd').onclick=()=>{const v=currentVideo();if(v)$('trimEnd').value=(v.currentTime||0).toFixed(1)};
 $('runTrim').onclick=()=>{const start=parseFloat($('trimStart').value)||0;const endRaw=$('trimEnd').value;const body={start};if(endRaw!==''&&endRaw!=null){const end=parseFloat(endRaw);if(isFinite(end))body.end=end}runEdit('edit/trim',body)};
@@ -250,7 +285,7 @@ $('vseek').addEventListener('pointerup',()=>{seeking=false});
 $('vseek').addEventListener('input',()=>{const v=currentVideo();if(!v||!v.duration)return;const t=($('vseek').value/1000)*v.duration;$('vtime').textContent=fmtTime(t)+' / '+fmtTime(v.duration)});
 $('vseek').addEventListener('change',()=>{const v=currentVideo();if(!v||!v.duration)return;v.currentTime=($('vseek').value/1000)*v.duration;seeking=false});
 stage.addEventListener('click',e=>{if(e.target.tagName==='VIDEO')togglePlay()});
-addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='o'){e.preventDefault();openDialog();return}if(e.key==='Escape'){e.preventDefault();if(!$('settingsPanel').hidden){closeSettings();return}if(!$('editPanel').hidden){closeEdit();return}if(isNativeFs){isNativeFs=false;try{window.ipc.postMessage('fullscreen-off')}catch(_){}return}quitApp();return}if(e.key==='F5'){e.preventDefault();takeScreenshot();return}if(e.ctrlKey||e.altKey||e.metaKey)return;switch(e.key){case'ArrowLeft':case'PageUp':go(-1);break;case'ArrowRight':case'PageDown':go(1);break;case'Home':if(files.length){cur=0;render()}break;case'End':if(files.length){cur=files.length-1;render()}break;case'Delete':del();break;case' ':togglePlay();break;case'f':case'F':case'F11':toggleFullscreen();break;case'm':case'M':toggleMute();break;default:return}e.preventDefault();e.stopPropagation()},true);
+addEventListener('keydown',e=>{if(e.ctrlKey&&e.key.toLowerCase()==='o'){e.preventDefault();openDialog();return}if(e.key==='Escape'){e.preventDefault();if(!$('settingsPanel').hidden){closeSettings();return}if(!$('editPanel').hidden){if(editBusy)say('仍在后台处理…');closeEdit();return}if(isNativeFs){isNativeFs=false;try{window.ipc.postMessage('fullscreen-off')}catch(_){}return}quitApp();return}if(e.key==='F5'){e.preventDefault();takeScreenshot();return}if(e.ctrlKey||e.altKey||e.metaKey)return;switch(e.key){case'ArrowLeft':case'PageUp':go(-1);break;case'ArrowRight':case'PageDown':go(1);break;case'Home':if(files.length){cur=0;render()}break;case'End':if(files.length){cur=files.length-1;render()}break;case'Delete':del();break;case' ':togglePlay();break;case'f':case'F':case'F11':toggleFullscreen();break;case'm':case'M':toggleMute();break;default:return}e.preventDefault();e.stopPropagation()},true);
 addEventListener('wheel',e=>{if(e.ctrlKey)return;go(e.deltaY>0?1:-1)},{passive:true});
 prevBtn.onclick=()=>go(-1);nextBtn.onclick=()=>go(1);
 $('openBtn').onclick=openDialog;$('openMain').onclick=openDialog;$('delBtn').onclick=del;
