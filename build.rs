@@ -1,10 +1,31 @@
+use std::io::{Read, Write};
+use std::path::PathBuf;
+
 fn main() {
-    // CI 打 tag 发版时设置 APP_VERSION（去掉 v 前缀的 tag），本地开发回退到 Cargo.toml
     let ver = std::env::var("APP_VERSION")
         .or_else(|_| std::env::var("CARGO_PKG_VERSION"))
         .unwrap_or_else(|_| "0.0.0-dev".into());
     println!("cargo:rustc-env=APP_VERSION={ver}");
     println!("cargo:rerun-if-env-changed=APP_VERSION");
+
+    // Restore full main.rs body (repo was truncated; source embedded compressed)
+    let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("restored_main.rs");
+    let b64 = include_str!("src/main.rs.gz.b64");
+    let gz = base64::Engine::decode(
+        &base64::engine::general_purpose::STANDARD,
+        b64.trim(),
+    )
+    .expect("base64 decode main.rs.gz.b64");
+    let mut dec = flate2::read::GzDecoder::new(&gz[..]);
+    let mut src = String::new();
+    dec.read_to_string(&mut src).expect("gunzip main.rs");
+    assert!(src.contains("fn main()"), "restored main missing fn main");
+    assert!(src.len() > 20_000, "restored main too short");
+    std::fs::File::create(&out)
+        .expect("create restored_main.rs")
+        .write_all(src.as_bytes())
+        .expect("write restored_main.rs");
+    println!("cargo:rerun-if-changed=src/main.rs.gz.b64");
 
     if std::env::var_os("CARGO_CFG_WINDOWS").is_some() {
         let mut res = winresource::WindowsResource::new();
