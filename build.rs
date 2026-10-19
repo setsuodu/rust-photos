@@ -8,14 +8,19 @@ fn main() {
     println!("cargo:rustc-env=APP_VERSION={ver}");
     println!("cargo:rerun-if-env-changed=APP_VERSION");
 
-    // Restore full main.rs body (repo was truncated; source embedded compressed)
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("restored_main.rs");
-    let b64 = include_str!("src/main.rs.gz.b64");
+    let b64 = [
+        include_str!("src/main.rs.gz.b64.0"),
+        include_str!("src/main.rs.gz.b64.1"),
+        include_str!("src/main.rs.gz.b64.2"),
+        include_str!("src/main.rs.gz.b64.3"),
+    ]
+    .concat();
     let gz = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
         b64.trim(),
     )
-    .expect("base64 decode main.rs.gz.b64");
+    .expect("base64 decode main.rs.gz.b64.*");
     let mut dec = flate2::read::GzDecoder::new(&gz[..]);
     let mut src = String::new();
     dec.read_to_string(&mut src).expect("gunzip main.rs");
@@ -25,7 +30,10 @@ fn main() {
         .expect("create restored_main.rs")
         .write_all(src.as_bytes())
         .expect("write restored_main.rs");
-    println!("cargo:rerun-if-changed=src/main.rs.gz.b64");
+    println!("cargo:rerun-if-changed=src/main.rs.gz.b64.0");
+    println!("cargo:rerun-if-changed=src/main.rs.gz.b64.1");
+    println!("cargo:rerun-if-changed=src/main.rs.gz.b64.2");
+    println!("cargo:rerun-if-changed=src/main.rs.gz.b64.3");
 
     if std::env::var_os("CARGO_CFG_WINDOWS").is_some() {
         let mut res = winresource::WindowsResource::new();
