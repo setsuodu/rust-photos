@@ -253,10 +253,9 @@ function setEditBusy(on,text){
   if(!on)applyFfmpegUi();
 }
 async function runEdit(path,body){
-  if(!ffmpegOk){say('未安装 ffmpeg，无法编辑');return}
-  if(editBusy){say('正在处理中，请稍候…');return}
-  setEditBusy(true,'正在处理，请稍候…');
-  say('正在处理，请稍候…',60000);
+  if(editBusy){say('仍在后台处理…');return}
+  if(!ffmpegOk){say('未检测到 ffmpeg');return}
+  setEditBusy(true,'正在处理…');
   try{
     const res=await api(path,'POST',Object.assign({i:cur},body||{}));
     const p=res.path||(res.paths&&res.paths[0])||'';
@@ -268,7 +267,8 @@ async function runEdit(path,body){
     setEditBusy(false);
   }
 }
-$('editBtn').onclick=openEdit;$('editClose').onclick=()=>{if(editBusy){say('仍在后台处理…');}closeEdit()};$('editPanel').onclick=e=>{if(e.target===$('editPanel')){if(editBusy)say('仍在后台处理…');closeEdit()}};
+$('editBtn').onclick=openEdit;$('editClose').onclick=()=>{if(editBusy){say('仍在后台处理…');}closeEdit()};
+(function(){const panel=$('editPanel');let downOnMask=false;panel.addEventListener('mousedown',e=>{downOnMask=e.target===panel});panel.addEventListener('click',e=>{if(downOnMask&&e.target===panel){if(editBusy)say('仍在后台处理…');else closeEdit()}downOnMask=false})})();
 $('trimUseCurStart').onclick=()=>{const v=currentVideo();if(v)$('trimStart').value=(v.currentTime||0).toFixed(1)};
 $('trimUseCurEnd').onclick=()=>{const v=currentVideo();if(v)$('trimEnd').value=(v.currentTime||0).toFixed(1)};
 $('runTrim').onclick=()=>{const start=parseFloat($('trimStart').value)||0;const endRaw=$('trimEnd').value;const body={start};if(endRaw!==''&&endRaw!=null){const end=parseFloat(endRaw);if(isFinite(end))body.end=end}runEdit('edit/trim',body)};
@@ -290,7 +290,7 @@ addEventListener('wheel',e=>{if(e.ctrlKey)return;go(e.deltaY>0?1:-1)},{passive:t
 prevBtn.onclick=()=>go(-1);nextBtn.onclick=()=>go(1);
 $('openBtn').onclick=openDialog;$('openMain').onclick=openDialog;$('delBtn').onclick=del;
 $('settingsBtn').onclick=openSettings;$('settingsClose').onclick=closeSettings;
-$('settingsPanel').onclick=e=>{if(e.target===$('settingsPanel'))closeSettings()};
+(function(){const panel=$('settingsPanel');let downOnMask=false;panel.addEventListener('mousedown',e=>{downOnMask=e.target===panel});panel.addEventListener('click',e=>{if(downOnMask&&e.target===panel)closeSettings();downOnMask=false})})();
 stage.addEventListener('dblclick',e=>toggleFullscreen());
 const ctxMenu=$('ctxMenu');
 function hideCtx(){ctxMenu.classList.remove('show')}
