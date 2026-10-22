@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       delete_releases:
-        description: "Delete all GitHub Releases"
+        description: "Delete all GitHub Releases (including drafts)"
         type: boolean
         default: true
       delete_tags:
@@ -29,41 +29,47 @@ jobs:
     name: Cleanup releases / tags / actions
     runs-on: ubuntu-latest
     steps:
-      - name: Delete all releases
+      - name: Delete ALL releases (by ID, kills drafts)
         if: ${{ inputs.delete_releases }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          echo "Listing releases..."
-          mapfile -t tags < <(gh api "repos/${{ github.repository }}/releases" --paginate -q '.[].tag_name' || true)
-          if [[ ${#tags[@]} -eq 0 ]]; then
-            echo "No releases."
+          echo "=== Listing ALL releases (including drafts) by ID ==="
+          mapfile -t ids < <(gh api "repos/${{ github.repository }}/releases" --paginate -q '.[].id' || true)
+
+          if [[ ${#ids[@]} -eq 0 ]]; then
+            echo "No releases found."
           else
-            for tag in "${tags[@]}"; do
-              echo "Deleting release: $tag"
-              gh release delete "$tag" --yes --cleanup-tag || true
+            echo "Found ${#ids[@]} release(s). Deleting..."
+            for id in "${ids[@]}"; do
+              echo "Deleting release id=$id"
+              gh api -X DELETE "repos/${{ github.repository }}/releases/$id" || true
             done
+            echo "All releases deleted."
           fi
 
-      - name: Delete remaining tags
+      - name: Delete ALL remaining tags
         if: ${{ inputs.delete_tags }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          echo "Listing tags..."
+          echo "=== Listing all tags ==="
           mapfile -t tags < <(gh api "repos/${{ github.repository }}/git/refs/tags" --paginate -q '.[].ref' 2>/dev/null | sed 's#refs/tags/##' || true)
+
           if [[ ${#tags[@]} -eq 0 ]]; then
-            echo "No tags."
+            echo "No tags found."
           else
+            echo "Found ${#tags[@]} tag(s). Deleting..."
             for tag in "${tags[@]}"; do
               echo "Deleting tag: $tag"
               gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/${tag}" || true
             done
+            echo "All tags deleted."
           fi
 
-      - name: Delete workflow runs
+      - name: Delete ALL workflow runs
         if: ${{ inputs.delete_workflow_runs }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -71,17 +77,13 @@ jobs:
         run: |
           set -euo pipefail
           KEEP="${KEEP:-0}"
-          echo "Listing workflow runs (keep newest: $KEEP)..."
-          mapfile -t runs < <(gh api "repos/${{ github.repository }}/actions/runs?per_page=100" --paginate -q '.[].id' 2>/dev/null || \
-            gh api "repos/${{ github.repository }}/actions/runs?per_page=100" --paginate -q '.workflow_runs[].id' || true)
+          echo "=== Listing workflow runs (keep newest: $KEEP) ==="
 
-          # Prefer workflow_runs path (REST shape)
-          if [[ ${#runs[@]} -eq 0 ]]; then
-            mapfile -t runs < <(gh api "repos/${{ github.repository }}/actions/runs?per_page=100" --paginate -q '.workflow_runs[].id' || true)
-          fi
+          mapfile -t runs < <(gh api "repos/${{ github.repository }}/actions/runs?per_page=100" --paginate -q '.workflow_runs[].id' || true)
 
           total=${#runs[@]}
           echo "Found $total runs"
+
           if [[ "$total" -eq 0 ]]; then
             echo "No workflow runs."
             exit 0
@@ -98,3 +100,5 @@ jobs:
             echo "Deleting run id=$id"
             gh api -X DELETE "repos/${{ github.repository }}/actions/runs/${id}" || true
           done
+
+          echo "Workflow runs cleanup done."
