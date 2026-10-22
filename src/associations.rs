@@ -2,7 +2,11 @@ use std::path::Path;
 
 use crate::state::{IMAGE_EXTS, VIDEO_EXTS};
 
-pub const PROGID: &str = "rust-photos.file";
+/// 图片与视频分开注册，避免资源管理器「类型」列全部显示同一个名字。
+pub const PROGID_IMAGE: &str = "rust-photos.image";
+pub const PROGID_VIDEO: &str = "rust-photos.video";
+/// 旧版单 ProgID，卸载时一并清理。
+const PROGID_LEGACY: &str = "rust-photos.file";
 
 #[cfg(windows)]
 fn dunce_path(p: &Path) -> String {
@@ -21,6 +25,48 @@ fn notify_shell() {
 }
 
 #[cfg(windows)]
+fn register_progid(
+    classes: &winreg::RegKey,
+    progid: &str,
+    friendly: &str,
+    exe: &str,
+) -> Result<(), String> {
+    use winreg::enums::*;
+    let (prog, _) = classes.create_subkey(progid).map_err(|e| e.to_string())?;
+    prog.set_value("", &friendly).map_err(|e| e.to_string())?;
+    // FriendlyTypeName 优先被资源管理器使用（Windows 2000+）
+    prog.set_value("FriendlyTypeName", &friendly)
+        .map_err(|e| e.to_string())?;
+    let (cmd, _) = prog
+        .create_subkey("shell\\open\\command")
+        .map_err(|e| e.to_string())?;
+    cmd.set_value("", &format!("\"{exe}\" \"%1\""))
+        .map_err(|e| e.to_string())?;
+    let (icon, _) = prog.create_subkey("DefaultIcon").map_err(|e| e.to_string())?;
+    icon.set_value("", &format!("{exe},0"))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(windows)]
+fn associate_exts(
+    classes: &winreg::RegKey,
+    exts: &[&str],
+    progid: &str,
+) -> Result<(), String> {
+    for ext in exts {
+        let key_name = format!(".{ext}");
+        let (ext_key, _) = classes.create_subkey(&key_name).map_err(|e| e.to_string())?;
+        ext_key.set_value("", &progid).map_err(|e| e.to_string())?;
+        let (owp, _) = ext_key
+            .create_subkey("OpenWithProgids")
+            .map_err(|e| e.to_string())?;
+        owp.set_value(progid, &"").map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
 pub fn register_associations() -> Result<(), String> {
     use winreg::enums::*;
     use winreg::RegKey;
@@ -30,25 +76,16 @@ pub fn register_associations() -> Result<(), String> {
     let classes = hkcu
         .open_subkey_with_flags("Software\\Classes", KEY_WRITE)
         .map_err(|e| format!("无法写入注册表: {e}"))?;
-    let (prog, _) = classes.create_subkey(PROGID).map_err(|e| e.to_string())?;
-    prog.set_value("", &"照片").map_err(|e| e.to_string())?;
-    let (cmd, _) = prog
-        .create_subkey("shell\\open\\command")
-        .map_err(|e| e.to_string())?;
-    cmd.set_value("", &format!("\"{exe}\" \"%1\""))
-        .map_err(|e| e.to_string())?;
-    let (icon, _) = prog.create_subkey("DefaultIcon").map_err(|e| e.to_string())?;
-    icon.set_value("", &format!("{exe},0"))
-        .map_err(|e| e.to_string())?;
-    for ext in IMAGE_EXTS.iter().chain(VIDEO_EXTS.iter()) {
-        let key_name = format!(".{ext}");
-        let (ext_key, _) = classes.create_subkey(&key_name).map_err(|e| e.to_string())?;
-        ext_key.set_value("", &PROGID).map_err(|e| e.to_string())?;
-        let (owp, _) = ext_key
-            .create_subkey("OpenWithProgids")
-            .map_err(|e| e.to_string())?;
-        owp.set_value(PROGID, &"").map_err(|e| e.to_string())?;
-    }
+
+    register_progid(&classes, PROGID_IMAGE, "图片文件", &exe)?;
+    register_progid(&classes, PROGID_VIDEO, "视频文件", &exe)?;
+
+    associate_exts(&classes, IMAGE_EXTS, PROGID_IMAGE)?;
+    associate_exts(&classes, VIDEO_EXTS, PROGID_VIDEO)?;
+
+    // 清理旧版单一 ProgID，避免残留导致类型仍显示「照片」
+    let _ = classes.delete_subkey_all(PROGID_LEGACY);
+
     notify_shell();
     Ok(())
 }
@@ -61,21 +98,30 @@ pub fn unregister_associations() -> Result<(), String> {
     let classes = hkcu
         .open_subkey_with_flags("Software\\Classes", KEY_WRITE)
         .map_err(|e| format!("无法写入注册表: {e}"))?;
+
+    let all_progids = [PROGID_IMAGE, PROGID_VIDEO, PROGID_LEGACY];
+
     for ext in IMAGE_EXTS.iter().chain(VIDEO_EXTS.iter()) {
         if let Ok(ext_key) =
             classes.open_subkey_with_flags(format!(".{ext}"), KEY_READ | KEY_WRITE)
         {
             if let Ok(val) = ext_key.get_value::<String, _>("") {
-                if val == PROGID {
+                if all_progids.contains(&val.as_str()) {
                     let _ = ext_key.delete_value("");
                 }
             }
             if let Ok(owp) = ext_key.open_subkey_with_flags("OpenWithProgids", KEY_WRITE) {
-                let _ = owp.delete_value(PROGID);
+                for pid in &all_progids {
+                    let _ = owp.delete_value(pid);
+                }
             }
         }
     }
-    let _ = classes.delete_subkey_all(PROGID);
+
+    for pid in &all_progids {
+        let _ = classes.delete_subkey_all(pid);
+    }
+
     notify_shell();
     Ok(())
 }
