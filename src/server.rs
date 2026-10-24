@@ -7,7 +7,7 @@ use std::{
 
 use tiny_http::{Header, Method, Request, Response, StatusCode};
 
-use crate::associations::reveal_in_explorer;
+use crate::associations::{reveal_in_explorer, set_desktop_wallpaper, set_lock_screen_wallpaper};
 use crate::state::{load_path, mime_of, pick_file_dialog, State};
 use crate::util::{decode_base64, screenshots_dir};
 use crate::video_edit;
@@ -288,6 +288,34 @@ pub fn handle(mut req: Request, token: &str, state: &Mutex<State>) {
                         respond_json(req, 500, serde_json::json!({ "error": e }).to_string());
                     } else {
                         respond_json(req, 200, serde_json::json!({ "ok": true }).to_string());
+                    }
+                }
+                None => respond_json(
+                    req,
+                    404,
+                    serde_json::json!({ "error": "文件不存在" }).to_string(),
+                ),
+            }
+        }
+        (Method::Post, r) if r.starts_with("wallpaper") => {
+            let i = query_param(query, "i")
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or_else(|| state.lock().unwrap().current);
+            let kind = query_param(query, "kind").unwrap_or("desktop");
+            let path = {
+                let s = state.lock().unwrap();
+                s.files.get(i).cloned()
+            };
+            match path {
+                Some(p) => {
+                    let res = if kind == "lock" {
+                        set_lock_screen_wallpaper(&p)
+                    } else {
+                        set_desktop_wallpaper(&p)
+                    };
+                    match res {
+                        Ok(()) => respond_json(req, 200, serde_json::json!({ "ok": true }).to_string()),
+                        Err(e) => respond_json(req, 500, serde_json::json!({ "error": e }).to_string()),
                     }
                 }
                 None => respond_json(

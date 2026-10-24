@@ -194,9 +194,11 @@ body.empty .bar,body.empty .nav,body.empty #vbar{opacity:0;pointer-events:none}
 </div>
 </div>
 <div id="ctxMenu" role="menu">
-<button type="button" id="ctxFs" role="menuitem">全屏</button>
-<button type="button" id="ctxFrame" role="menuitem">保存视频帧</button>
-<button type="button" id="ctxReveal" role="menuitem">打开所在位置</button>
+<button type="button" id="ctxReveal" role="menuitem">打开文件位置</button>
+<button type="button" id="ctxDesktop" role="menuitem">设为桌面壁纸</button>
+<button type="button" id="ctxLock" role="menuitem">设为锁屏壁纸</button>
+<button type="button" id="ctxFs" role="menuitem" hidden>全屏</button>
+<button type="button" id="ctxFrame" role="menuitem" hidden>保存视频帧</button>
 </div>
 <script>
 (()=>{
@@ -294,13 +296,32 @@ $('settingsBtn').onclick=openSettings;$('settingsClose').onclick=closeSettings;
 stage.addEventListener('dblclick',e=>toggleFullscreen());
 const ctxMenu=$('ctxMenu');
 function hideCtx(){ctxMenu.classList.remove('show')}
-function showCtx(x,y){$('ctxFs').textContent=isNativeFs?'退出全屏':'全屏';ctxMenu.style.left=Math.min(x,window.innerWidth-180)+'px';ctxMenu.style.top=Math.min(y,window.innerHeight-120)+'px';ctxMenu.classList.add('show')}
-stage.addEventListener('contextmenu',e=>{const v=e.target.closest&&e.target.closest('video');if(!v){hideCtx();return}e.preventDefault();e.stopPropagation();showCtx(e.clientX,e.clientY)});
+function showCtx(x,y,mode){
+  const isVideo=mode==='video';
+  $('ctxReveal').hidden=false;
+  $('ctxDesktop').hidden=isVideo;
+  $('ctxLock').hidden=isVideo;
+  $('ctxFs').hidden=!isVideo;
+  $('ctxFrame').hidden=!isVideo;
+  if(isVideo)$('ctxFs').textContent=isNativeFs?'退出全屏':'全屏';
+  ctxMenu.style.left=Math.min(x,window.innerWidth-200)+'px';
+  ctxMenu.style.top=Math.min(y,window.innerHeight-160)+'px';
+  ctxMenu.classList.add('show');
+}
+stage.addEventListener('contextmenu',e=>{
+  const v=e.target.closest&&e.target.closest('video');
+  const img=e.target.closest&&e.target.closest('img');
+  if(!v&&!img){hideCtx();return}
+  e.preventDefault();e.stopPropagation();
+  showCtx(e.clientX,e.clientY,v?'video':'image');
+});
 addEventListener('click',hideCtx);
 addEventListener('blur',hideCtx);
 $('ctxFs').onclick=e=>{e.stopPropagation();hideCtx();toggleFullscreen()};
 $('ctxFrame').onclick=e=>{e.stopPropagation();hideCtx();takeScreenshot()};
-$('ctxReveal').onclick=async e=>{e.stopPropagation();hideCtx();if(!files.length){say('没有打开的文件');return}try{await api('reveal?i='+cur,'POST')}catch(err){say(err.message||'无法打开所在位置',5000)}};
+$('ctxReveal').onclick=async e=>{e.stopPropagation();hideCtx();if(!files.length){say('没有打开的文件');return}try{await api('reveal?i='+cur,'POST')}catch(err){say(err.message||'无法打开文件位置',5000)}};
+$('ctxDesktop').onclick=async e=>{e.stopPropagation();hideCtx();if(!files.length){say('没有打开的文件');return}try{await api('wallpaper?i='+cur+'&kind=desktop','POST');say('已设为桌面壁纸')}catch(err){say(err.message||'设置桌面壁纸失败',5000)}};
+$('ctxLock').onclick=async e=>{e.stopPropagation();hideCtx();if(!files.length){say('没有打开的文件');return}try{await api('wallpaper?i='+cur+'&kind=lock','POST');say('已设为锁屏壁纸')}catch(err){say(err.message||'设置锁屏壁纸失败',5000)}};
 let idleTimer;const wake=()=>{if(document.body.classList.contains('empty'))return;document.body.classList.remove('idle');clearTimeout(idleTimer);idleTimer=setTimeout(()=>document.body.classList.add('idle'),2500)};
 addEventListener('mousemove',wake);addEventListener('keydown',wake);wake();
 updatePlayModeBtn();$('vplayIcon').innerHTML=ICON.play;$('vmuteIcon').innerHTML=ICON.vol;
