@@ -216,7 +216,7 @@ const stage=$('stage'),nameEl=$('name'),counterEl=$('counter'),msg=$('msg'),toas
 const prevBtn=$('prev'),nextBtn=$('next');
 let toastTimer=null,busy=false,renderSeq=0,seeking=false;
 const ZOOM_MIN=0.25,ZOOM_MAX=8,ZOOM_STEP=1.12;
-let zoom=1;
+let zoom=1,panX=0,panY=0;
 function clampZoom(z){return Math.min(ZOOM_MAX,Math.max(ZOOM_MIN,z))}
 function isImageMedia(){const el=stage.querySelector('img,video');return !!(el&&el.tagName==='IMG')}
 function updateZoomPct(){
@@ -227,12 +227,33 @@ function updateZoomPct(){
   pctEl.textContent=p+'%';
   pctEl.hidden=false;
 }
-function applyZoom(){const el=stage.querySelector('img,video');if(!el)return;el.style.transform='scale('+zoom+')';updateZoomPct()}
-function resetZoom(){zoom=1;applyZoom()}
+function getMediaEl(){return stage.querySelector('img,video')}
+/** 根据当前 zoom 与元素布局尺寸，计算允许的平移范围（四角边界锁死） */
+function clampPan(){
+  const el=getMediaEl();
+  if(!el||zoom<=1){panX=0;panY=0;return}
+  // object-fit:contain 后元素 client 尺寸即适配后的显示尺寸；scale 后视觉尺寸 = client * zoom
+  // transform-origin:center，故最大平移 = (放大后尺寸 - 舞台尺寸) / 2
+  const maxX=Math.max(0,(el.clientWidth*zoom-stage.clientWidth)/2);
+  const maxY=Math.max(0,(el.clientHeight*zoom-stage.clientHeight)/2);
+  panX=Math.min(maxX,Math.max(-maxX,panX));
+  panY=Math.min(maxY,Math.max(-maxY,panY));
+}
+function applyZoom(){
+  const el=getMediaEl();
+  if(!el)return;
+  clampPan();
+  el.style.transform='translate('+panX+'px,'+panY+'px) scale('+zoom+')';
+  el.style.cursor=zoom>1?'grab':'';
+  updateZoomPct();
+}
+function resetZoom(){zoom=1;panX=0;panY=0;applyZoom()}
 function zoomBy(dir){ // dir>0 放大, <0 缩小
   const next=clampZoom(dir>0?zoom*ZOOM_STEP:zoom/ZOOM_STEP);
   if(next===zoom)return; // 已到边界，不再滚
-  zoom=next;applyZoom();
+  zoom=next;
+  if(zoom<=1){panX=0;panY=0}
+  applyZoom();
 }
 function isAnyMenuOpen(){
   return !$('settingsPanel').hidden||!$('editPanel').hidden||isCtxOpen();
@@ -367,6 +388,35 @@ addEventListener('wheel',e=>{
   // 滚轮缩放对图片和视频都允许；仅快捷键对视频禁用
   zoomBy(e.deltaY<0?1:-1);
 },{passive:false});
+// —— 左键拖拽平移（仅 zoom>1），并锁四角边界 ——
+(function(){
+  let dragging=false,startX=0,startY=0,origPanX=0,origPanY=0;
+  stage.addEventListener('mousedown',e=>{
+    if(e.button!==0)return; // 仅左键
+    if(zoom<=1||isAnyMenuOpen())return;
+    const el=getMediaEl();
+    if(!el||(e.target!==el&&!el.contains(e.target)))return;
+    e.preventDefault();
+    dragging=true;
+    startX=e.clientX;startY=e.clientY;
+    origPanX=panX;origPanY=panY;
+    el.style.cursor='grabbing';
+  });
+  addEventListener('mousemove',e=>{
+    if(!dragging)return;
+    panX=origPanX+(e.clientX-startX);
+    panY=origPanY+(e.clientY-startY);
+    applyZoom(); // 内部会 clampPan
+  });
+  addEventListener('mouseup',e=>{
+    if(!dragging)return;
+    dragging=false;
+    const el=getMediaEl();
+    if(el)el.style.cursor=zoom>1?'grab':'';
+  });
+  // 窗口失焦时结束拖拽
+  addEventListener('blur',()=>{dragging=false});
+})();
 prevBtn.onclick=()=>go(-1);nextBtn.onclick=()=>go(1);
 $('openBtn').onclick=openDialog;$('openMain').onclick=openDialog;$('delBtn').onclick=del;
 $('settingsBtn').onclick=openSettings;$('settingsClose').onclick=closeSettings;
@@ -417,6 +467,7 @@ $('ctxLock').onclick=async e=>{
 };
 let idleTimer;const wake=()=>{if(document.body.classList.contains('empty'))return;document.body.classList.remove('idle');clearTimeout(idleTimer);idleTimer=setTimeout(()=>document.body.classList.add('idle'),2500)};
 addEventListener('mousemove',wake);addEventListener('keydown',wake);wake();
+addEventListener('resize',()=>{if(zoom>1)applyZoom()});
 updatePlayModeBtn();$('vplayIcon').innerHTML=ICON.play;$('vmuteIcon').innerHTML=ICON.vol;
 api('state').then(s=>{apply(s);refreshFfmpeg()}).catch(e=>say(e.message));
 })();
